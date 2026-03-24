@@ -27,7 +27,11 @@
     wants = [ "network-online.target" ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.nix}/bin/nix flake update /etc/nixos && ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#atlazlog'";
+      WorkingDirectory = "/etc/nixos";
+      ExecStart = pkgs.writeShellScript "atlaz-autoupdate" ''
+        ${pkgs.nix}/bin/nix flake update /etc/nixos
+        ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#atlazlog
+      '';
     };
   };
 
