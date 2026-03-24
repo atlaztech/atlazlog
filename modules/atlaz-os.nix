@@ -29,7 +29,7 @@
       Type = "oneshot";
       WorkingDirectory = "/etc/nixos";
       ExecStart = pkgs.writeShellScript "atlaz-autoupdate" ''
-        ${pkgs.nix}/bin/nix flake update /etc/nixos
+        ${pkgs.nix}/bin/nix flake update --flake /etc/nixos
         ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#atlazlog
       '';
     };
