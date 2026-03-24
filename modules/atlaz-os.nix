@@ -25,8 +25,6 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  systemd.suppressedSystemGenerators = [ "systemd-ssh-generator" ];
-
   environment.systemPackages = with pkgs; [
     tcpdump
     wget
