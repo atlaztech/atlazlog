@@ -91,16 +91,21 @@
               ${pkgs.coreutils}/bin/mkdir -p /mnt/boot
               ${pkgs.util-linux}/bin/mount /dev/vda1 /mnt/boot
 
-              echo "[6/8] gerando hardware-configuration e copiando flake do host"
+              echo "[6/9] gerando hardware-configuration e copiando config do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
               ${pkgs.coreutils}/bin/cp ${self}/host/flake.nix /mnt/etc/nixos/flake.nix
               ${pkgs.coreutils}/bin/cp ${self}/host/configuration.nix /mnt/etc/nixos/configuration.nix
 
-              echo "[7/8] atualizando flake.lock"
-              ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos
+              echo "[7/9] resolvendo flake.lock offline (via store paths)"
+              ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
+                --override-input atlaz-os path:${self} \
+                --override-input nixpkgs path:${nixpkgs}
 
-              echo "[8/8] instalando NixOS"
+              echo "[8/9] instalando NixOS"
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy
+
+              echo "[9/9] removendo flake.lock (proximo rebuild resolve via GitHub)"
+              ${pkgs.coreutils}/bin/rm -f /mnt/etc/nixos/flake.lock
               echo "[final] reiniciando sistema"
               ${pkgs.systemd}/bin/systemctl reboot
             '';
