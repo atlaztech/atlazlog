@@ -20,6 +20,25 @@
   };
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  systemd.services.atlaz-autoupdate = {
+    description = "AtlazLog auto-update";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.nix}/bin/nix flake update /etc/nixos && ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#atlazlog'";
+    };
+  };
+
+  systemd.timers.atlaz-autoupdate = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "5min";
+      OnUnitActiveSec = "30min";
+    };
+  };
+
   system.stateVersion = "25.11";
 
 }
