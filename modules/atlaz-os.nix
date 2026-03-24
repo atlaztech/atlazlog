@@ -9,7 +9,7 @@
 
   networking.nameservers = [ "8.8.8.8" ];
   services.resolved.enable = true;
-  time.timeZone = "America/Fortaleza";
+  time.timeZone = "UTC";
 
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "yes";
