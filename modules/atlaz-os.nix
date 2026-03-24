@@ -11,6 +11,7 @@
   services.resolved.enable = true;
   time.timeZone = "UTC";
 
+
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "yes";
 
