@@ -10,9 +10,11 @@
 
   fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
 
-  networking.nameservers = [ "1.1.1.1" ];
+  networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
+  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 ];
+  networking.firewall.allowedUDPPorts = [ 2055 ];
   services.resolved.enable = true;
-  time.timeZone = "America/Fortalza";
+  time.timeZone = "UTC";
 
 
   services.openssh.enable = true;
@@ -37,6 +39,7 @@
       volumes = [
         "clickhouse_data:/var/lib/clickhouse"
         "clickhouse_logs:/var/log/clickhouse-server"
+        "${./clickhouse_config.xml}:/etc/clickhouse-server/config.d/custom.xml:ro"
       ];
       extraOptions = [ "--network=host" ];
     };
@@ -74,7 +77,10 @@
 
   boot.kernel.sysctl."vm.overcommit_memory" = 1;
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings = {
+    experimental-features = [ "nix-command" "flakes" ];
+    download-buffer-size = 1073741824;
+  };
 
   environment.systemPackages = with pkgs; [
     tcpdump
