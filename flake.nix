@@ -47,8 +47,7 @@
               nix nixos-install-tools git
             ];
             serviceConfig = {
-              Type = "oneshot";
-              RemainAfterExit = true;
+              Type = "simple";
               TimeoutStartSec = "0";
               StandardOutput = "journal+console";
               StandardError = "journal+console";

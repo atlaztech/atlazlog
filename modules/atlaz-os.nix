@@ -22,6 +22,13 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  environment.systemPackages = with pkgs; [
+    tcpdump
+    wget
+    curl
+    wireshark-cli
+  ];
+
   systemd.services.atlaz-autoupdate = {
     description = "AtlazLog auto-update";
     after = [ "network-online.target" ];
@@ -39,8 +46,11 @@
   systemd.timers.atlaz-autoupdate = {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnBootSec = "5min";
+      OnBootSec = "0s";
       OnUnitActiveSec = "30min";
+      OnCalendar = "*-*-* 03:00:00";
+      Persistent = true;
+      RandomizedDelaySec = "10min";
     };
   };
 
