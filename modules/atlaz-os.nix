@@ -5,6 +5,9 @@
   boot.loader.grub.device = "nodev";
   boot.loader.grub.efiInstallAsRemovable = true;
 
+  boot.kernelParams = [ "console=ttyS0,115200" ];
+  systemd.services."serial-getty@ttyS0".enable = true;
+
   fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
 
   networking.nameservers = [ "1.1.1.1" ];
@@ -21,6 +24,8 @@
   };
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  systemd.suppressedSystemGenerators = [ "systemd-ssh-generator" ];
 
   environment.systemPackages = with pkgs; [
     tcpdump
