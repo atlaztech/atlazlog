@@ -38,7 +38,7 @@
         "clickhouse_data:/var/lib/clickhouse"
         "clickhouse_logs:/var/log/clickhouse-server"
       ];
-      extraOptions = [ "--network=host" "--restart=unless-stopped" ];
+      extraOptions = [ "--network=host" ];
     };
 
     containers.netflow = {
@@ -68,7 +68,7 @@
         "pg_data:/var/lib/postgresql/data"
       ];
       dependsOn = [ "clickhouse" ];
-      extraOptions = [ "--network=host" "--pull=always" "--privileged" "--restart=unless-stopped" ];
+      extraOptions = [ "--network=host" "--pull=always" "--privileged" ];
     };
   };
 
