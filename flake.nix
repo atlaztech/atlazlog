@@ -60,36 +60,51 @@
               [ -e /tmp/done ] && exit 0
               ${pkgs.coreutils}/bin/touch /tmp/done
 
-              echo "[1/8] aguardando disco /dev/vda"
+              echo "[1/8] detectando disco de instalacao"
+              DISK=""
               for _ in $(seq 1 60); do
-                [ -b /dev/vda ] && break
+                for d in /dev/vda /dev/sda /dev/nvme0n1; do
+                  if [ -b "$d" ]; then
+                    DISK="$d"
+                    break 2
+                  fi
+                done
                 ${pkgs.coreutils}/bin/sleep 1
               done
-              [ -b /dev/vda ]
+              [ -n "$DISK" ] || { echo "ERRO: nenhum disco encontrado"; exit 1; }
+              echo "disco detectado: $DISK"
 
-              echo "[2/8] particionando disco"
-              ${pkgs.parted}/bin/parted -s /dev/vda mklabel gpt
-              ${pkgs.parted}/bin/parted -s /dev/vda mkpart ESP fat32 1MiB 513MiB
-              ${pkgs.parted}/bin/parted -s /dev/vda set 1 esp on
-              ${pkgs.parted}/bin/parted -s /dev/vda mkpart primary ext4 513MiB 100%
+              if [[ "$DISK" == /dev/nvme* ]]; then
+                PART1="''${DISK}p1"
+                PART2="''${DISK}p2"
+              else
+                PART1="''${DISK}1"
+                PART2="''${DISK}2"
+              fi
+
+              echo "[2/8] particionando disco $DISK"
+              ${pkgs.parted}/bin/parted -s "$DISK" mklabel gpt
+              ${pkgs.parted}/bin/parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
+              ${pkgs.parted}/bin/parted -s "$DISK" set 1 esp on
+              ${pkgs.parted}/bin/parted -s "$DISK" mkpart primary ext4 513MiB 100%
 
               echo "[3/8] aguardando particoes"
               for _ in $(seq 1 120); do
-                ${pkgs.util-linux}/bin/partprobe /dev/vda 2>/dev/null || true
-                [ -b /dev/vda1 ] && [ -b /dev/vda2 ] && break
+                ${pkgs.util-linux}/bin/partprobe "$DISK" 2>/dev/null || true
+                [ -b "$PART1" ] && [ -b "$PART2" ] && break
                 ${pkgs.coreutils}/bin/sleep 1
               done
-              [ -b /dev/vda1 ]
-              [ -b /dev/vda2 ]
+              [ -b "$PART1" ]
+              [ -b "$PART2" ]
 
               echo "[4/8] formatando particoes"
-              ${pkgs.dosfstools}/bin/mkfs.vfat -F32 /dev/vda1
-              ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F /dev/vda2
+              ${pkgs.dosfstools}/bin/mkfs.vfat -F32 "$PART1"
+              ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F "$PART2"
 
               echo "[5/8] montando sistema de arquivos"
-              ${pkgs.util-linux}/bin/mount /dev/vda2 /mnt
+              ${pkgs.util-linux}/bin/mount "$PART2" /mnt
               ${pkgs.coreutils}/bin/mkdir -p /mnt/boot
-              ${pkgs.util-linux}/bin/mount /dev/vda1 /mnt/boot
+              ${pkgs.util-linux}/bin/mount "$PART1" /mnt/boot
 
               echo "[6/9] gerando hardware-configuration e copiando config do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
