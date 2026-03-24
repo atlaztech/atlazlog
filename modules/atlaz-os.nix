@@ -7,9 +7,9 @@
 
   fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
 
-  networking.nameservers = [ "8.8.8.8" ];
+  networking.nameservers = [ "1.1.1.1" ];
   services.resolved.enable = true;
-  time.timeZone = "UTC";
+  time.timeZone = "America/Fortaleza";
 
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "yes";
