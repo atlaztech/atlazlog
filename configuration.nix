@@ -1,5 +1,8 @@
 { config, pkgs, ... }: {
-  imports = [ ./hardware-configuration.nix ];
+  imports =
+  if builtins.pathExists ./hardware-configuration.nix
+  then [ ./hardware-configuration.nix ]
+  else [ /etc/nixos/hardware-configuration.nix ];
 
   boot.loader.grub.enable = true;
   boot.loader.grub.efiSupport = true;
