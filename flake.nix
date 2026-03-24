@@ -1,23 +1,19 @@
 {
-  description = "AtlazLog – NixOS ISO + Sistema Final";
+  description = "AtlazLog – NixOS base module + installer ISO";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
   outputs = { self, nixpkgs }:
   let
     system = "x86_64-linux";
-
-    commonConfig = {
-      system.stateVersion = "25.11";
-      nix.settings.experimental-features = [ "nix-command" "flakes" ];
-    };
   in {
+
+    nixosModules.atlaz-os = import ./modules/atlaz-os.nix;
 
     # ISO de instalação automática
     nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
       inherit system;
       modules = [
-        commonConfig
         ({ modulesPath, lib, pkgs, ... }: {
           imports = [
             (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix")
@@ -93,30 +89,21 @@
               ${pkgs.coreutils}/bin/mkdir -p /mnt/boot
               ${pkgs.util-linux}/bin/mount /dev/vda1 /mnt/boot
 
-              echo "[6/8] gerando configuracao base e copiando flake"
+              echo "[6/8] gerando hardware-configuration e copiando flake do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
-              ${pkgs.coreutils}/bin/cp ${self}/flake.nix /mnt/etc/nixos/flake.nix
-              ${pkgs.coreutils}/bin/cp ${self}/configuration.nix /mnt/etc/nixos/configuration.nix
+              ${pkgs.coreutils}/bin/cp ${self}/host/flake.nix /mnt/etc/nixos/flake.nix
+              ${pkgs.coreutils}/bin/cp ${self}/host/configuration.nix /mnt/etc/nixos/configuration.nix
 
               echo "[7/8] atualizando flake.lock"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos
 
               echo "[8/8] instalando NixOS"
-              ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazOS --no-root-passwd --no-channel-copy
+              ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy
               echo "[final] reiniciando sistema"
               ${pkgs.systemd}/bin/systemctl reboot
             '';
           };
         })
-      ];
-    };
-
-    # Sistema final (nixos-rebuild switch --flake .#atlazOS)
-    nixosConfigurations.atlazOS = nixpkgs.lib.nixosSystem {
-      inherit system;
-      modules = [
-        commonConfig
-        ./configuration.nix
       ];
     };
 
