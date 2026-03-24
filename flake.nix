@@ -19,6 +19,8 @@
             (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix")
           ];
 
+          nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
           boot.supportedFilesystems.zfs = lib.mkForce false;
           hardware.enableRedistributableFirmware = lib.mkForce false;
           hardware.firmware = lib.mkForce [];
