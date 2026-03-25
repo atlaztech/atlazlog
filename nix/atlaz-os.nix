@@ -109,7 +109,7 @@ in {
     wantedBy = [ "timers.target" ];
     timerConfig = {
       OnBootSec = "0s";
-      OnCalendar = "*-*-* 03:00:00";
+      OnCalendar = "*-*-* 06:00:00";
       Persistent = true;
       RandomizedDelaySec = "10min";
     };
