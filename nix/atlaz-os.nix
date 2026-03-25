@@ -29,6 +29,11 @@ in {
     log-driver = "local";
   };
 
+  services.redis.servers."" = {
+    enable = true;
+    requirePass = masterPassword;
+  };
+
   virtualisation.oci-containers = {
     backend = "docker";
 
@@ -53,19 +58,8 @@ in {
       environment = {
         APP_ENV = "production";
         APP_DEBUG = "false";
-        DB_HOST = "127.0.0.1";
-        DB_USERNAME = "laravel";
-        DB_DATABASE = "laravel";
         DB_PASSWORD = masterPassword;
-        REDIS_CLIENT = "phpredis";
-        REDIS_HOST = "127.0.0.1";
         REDIS_PASSWORD = masterPassword;
-        REDIS_PORT = "6379";
-        CACHE_STORE = "database";
-        CLICKHOUSE_URL = "http://127.0.0.1:8123";
-        CLICKHOUSE_HOST = "127.0.0.1";
-        CLICKHOUSE_DATABASE = "laravel";
-        CLICKHOUSE_USERNAME = "laravel";
         CLICKHOUSE_PASSWORD = masterPassword;
       };
       volumes = [
@@ -74,6 +68,11 @@ in {
       dependsOn = [ "clickhouse" ];
       extraOptions = [ "--network=host" "--pull=always" "--privileged" ];
     };
+  };
+
+  systemd.services.docker-netflow = {
+    after = [ "redis.service" ];
+    requires = [ "redis.service" ];
   };
 
   users.users.root.hashedPassword = "$y$j9T$2oH4LFkNDPoMx6UPrcw0g.$RupKkWamcUJdr4qFAiZ7nE/mtq3G42PcBghpRTQnBSD";
