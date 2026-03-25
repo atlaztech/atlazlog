@@ -59,7 +59,7 @@
         REDIS_HOST = "127.0.0.1";
         REDIS_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
         REDIS_PORT = "6379";
-        CACHE_STORE = "database";
+        CACHE_STORE = "redis";
         CLICKHOUSE_URL = "http://127.0.0.1:8123";
         CLICKHOUSE_HOST = "127.0.0.1";
         CLICKHOUSE_DATABASE = "laravel";
@@ -108,7 +108,6 @@
     wantedBy = [ "timers.target" ];
     timerConfig = {
       OnBootSec = "0s";
-      OnUnitActiveSec = "30min";
       OnCalendar = "*-*-* 03:00:00";
       Persistent = true;
       RandomizedDelaySec = "10min";
