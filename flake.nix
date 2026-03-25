@@ -8,7 +8,7 @@
     system = "x86_64-linux";
   in {
 
-    nixosModules.atlaz-os = import ./modules/atlaz-os.nix;
+    nixosModules.atlaz-os = import ./nix/atlaz-os.nix;
 
     # ISO de instalação automática
     nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
@@ -107,8 +107,7 @@
 
               echo "[6/9] gerando hardware-configuration e copiando config do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
-              ${pkgs.coreutils}/bin/cp ${self}/host/flake.nix /mnt/etc/nixos/flake.nix
-              ${pkgs.coreutils}/bin/cp ${self}/host/configuration.nix /mnt/etc/nixos/configuration.nix
+              ${pkgs.coreutils}/bin/cp ${self}/nix/flake.nix /mnt/etc/nixos/flake.nix
 
               echo "[7/9] resolvendo flake.lock offline (via store paths)"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
