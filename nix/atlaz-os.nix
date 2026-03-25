@@ -1,4 +1,7 @@
-{ config, pkgs, ... }: {
+{ config, pkgs, ... }:
+let
+  masterPassword = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+in {
 
   boot.loader.grub.enable = true;
   boot.loader.grub.efiSupport = true;
@@ -34,7 +37,7 @@
       environment = {
         CLICKHOUSE_DB = "laravel";
         CLICKHOUSE_USER = "laravel";
-        CLICKHOUSE_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+        CLICKHOUSE_PASSWORD = masterPassword;
         LISTEN_HOST = "0.0.0.0";
       };
       volumes = [
@@ -53,17 +56,17 @@
         DB_HOST = "127.0.0.1";
         DB_USERNAME = "laravel";
         DB_DATABASE = "laravel";
-        DB_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+        DB_PASSWORD = masterPassword;
         REDIS_CLIENT = "phpredis";
         REDIS_HOST = "127.0.0.1";
-        REDIS_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+        REDIS_PASSWORD = masterPassword;
         REDIS_PORT = "6379";
-        CACHE_STORE = "redis";
+        CACHE_STORE = "database";
         CLICKHOUSE_URL = "http://127.0.0.1:8123";
         CLICKHOUSE_HOST = "127.0.0.1";
         CLICKHOUSE_DATABASE = "laravel";
         CLICKHOUSE_USERNAME = "laravel";
-        CLICKHOUSE_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+        CLICKHOUSE_PASSWORD = masterPassword;
       };
       volumes = [
         "pg_data:/var/lib/postgresql/data"
