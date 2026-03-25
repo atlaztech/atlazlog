@@ -32,9 +32,9 @@
     containers.clickhouse = {
       image = "clickhouse/clickhouse-server:latest";
       environment = {
-        CLICKHOUSE_DB = "netflow";
-        CLICKHOUSE_USER = "default";
-        CLICKHOUSE_PASSWORD = "password";
+        CLICKHOUSE_DB = "laravel";
+        CLICKHOUSE_USER = "laravel";
+        CLICKHOUSE_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
         LISTEN_HOST = "0.0.0.0";
       };
       volumes = [
@@ -52,21 +52,19 @@
         APP_DEBUG = "false";
         DB_HOST = "127.0.0.1";
         DB_USERNAME = "laravel";
-        DB_DATABASE = "netflow";
+        DB_DATABASE = "laravel";
         DB_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
         TELESCOPE_QUERY_WATCHER = "true";
-        NIGHTWATCH_TOKEN = "oSl2GmdJc6NRJFC2TFDHldBIQGNpP5CDt4iWWZnvk4pg";
-        LOG_CHANNEL = "nightwatch";
         REDIS_CLIENT = "phpredis";
         REDIS_HOST = "127.0.0.1";
-        REDIS_PASSWORD = "null";
+        REDIS_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
         REDIS_PORT = "6379";
         CACHE_STORE = "database";
         CLICKHOUSE_URL = "http://127.0.0.1:8123";
         CLICKHOUSE_HOST = "127.0.0.1";
-        CLICKHOUSE_DATABASE = "netflow";
-        CLICKHOUSE_USERNAME = "default";
-        CLICKHOUSE_PASSWORD = "password";
+        CLICKHOUSE_DATABASE = "laravel";
+        CLICKHOUSE_USERNAME = "laravel";
+        CLICKHOUSE_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
       };
       volumes = [
         "pg_data:/var/lib/postgresql/data"
