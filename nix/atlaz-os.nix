@@ -54,7 +54,6 @@
         DB_USERNAME = "laravel";
         DB_DATABASE = "laravel";
         DB_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
-        TELESCOPE_QUERY_WATCHER = "true";
         REDIS_CLIENT = "phpredis";
         REDIS_HOST = "127.0.0.1";
         REDIS_PASSWORD = "be4e224c-b18e-49b1-aac9-ca27190ea819";
