@@ -10,7 +10,7 @@
 
   fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
 
-  networking.hostName = "atlaz-os";
+  networking.hostName = "atlaz";
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
   networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
