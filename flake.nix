@@ -50,15 +50,30 @@
             serviceConfig = {
               Type = "simple";
               TimeoutStartSec = "0";
-              StandardOutput = "journal+console";
+              StandardInput = "tty-force";
+              StandardOutput = "tty";
               StandardError = "journal+console";
+              TTYPath = "/dev/tty1";
+              TTYReset = true;
+              TTYVHangup = true;
             };
             script = ''
-              set -euxo pipefail
-              PS4='+ [$(date -Is)] line ''${LINENO}: '
+              set -euo pipefail
 
               [ -e /tmp/done ] && exit 0
               ${pkgs.coreutils}/bin/touch /tmp/done
+
+              prompt_read() {
+                local __var_name="$1"
+                local __prompt="$2"
+                local __value=""
+                if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+                  echo "ERRO: terminal interativo indisponivel em /dev/tty." >&2
+                  return 1
+                fi
+                read -r -p "$__prompt" __value </dev/tty
+                printf -v "$__var_name" '%s' "$__value"
+              }
 
               octet_ok() {
                 local n="$1"
@@ -111,7 +126,7 @@
               NET_GW=""
               while true; do
                 while true; do
-                  read -r -p "Endereco IPv4 com mascara CIDR (ex: 192.168.1.10/24): " NET_CIDR || true
+                  prompt_read NET_CIDR "Endereco IPv4 com mascara CIDR (ex: 192.168.1.10/24): "
                   NET_CIDR="''${NET_CIDR//[[:space:]]/}"
                   if validate_cidr "$NET_CIDR"; then
                     break
@@ -121,7 +136,7 @@
                 NET_IP="''${NET_CIDR%/*}"
                 NET_PREFIX="''${NET_CIDR#*/}"
                 while true; do
-                  read -r -p "Gateway IPv4 (ex: 192.168.1.1): " NET_GW || true
+                  prompt_read NET_GW "Gateway IPv4 (ex: 192.168.1.1): "
                   NET_GW="''${NET_GW//[[:space:]]/}"
                   if validate_ipv4 "$NET_GW"; then
                     break
@@ -135,7 +150,7 @@
                 echo "  defaultGateway = \"''${NET_GW}\";"
                 echo "  interface = eth0 (sem DHCP nesta interface)"
                 echo ""
-                read -r -p "Confirmar e continuar a instalacao? [s/N]: " ans || true
+                prompt_read ans "Confirmar e continuar a instalacao? [s/N]: "
                 case "''${ans,,}" in
                   s|sim|y|yes)
                     echo "Testando conectividade (ping 8.8.8.8 e 1.1.1.1)..."
