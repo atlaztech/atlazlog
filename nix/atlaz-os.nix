@@ -15,7 +15,7 @@ in {
 
   networking.hostName = "atlaz";
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
-  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 ];
+  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 51820 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
   networking.wg-quick.interfaces.wg0 = {
     autostart = true;
