@@ -45,11 +45,6 @@ in {
     log-driver = "local";
   };
 
-  services.redis.servers."" = {
-    enable = true;
-    requirePass = masterPassword;
-  };
-
   virtualisation.oci-containers = {
     backend = "docker";
 
@@ -84,11 +79,6 @@ in {
       dependsOn = [ "clickhouse" ];
       extraOptions = [ "--network=host" "--pull=always" "--privileged" ];
     };
-  };
-
-  systemd.services.docker-netflow = {
-    after = [ "redis.service" ];
-    requires = [ "redis.service" ];
   };
 
   users.users.root.hashedPassword = "$y$j9T$2oH4LFkNDPoMx6UPrcw0g.$RupKkWamcUJdr4qFAiZ7nE/mtq3G42PcBghpRTQnBSD";
