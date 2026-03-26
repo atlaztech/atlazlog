@@ -71,8 +71,22 @@
                   echo "ERRO: terminal interativo indisponivel em /dev/tty." >&2
                   return 1
                 fi
-                read -r -p "$__prompt" __value </dev/tty
+                ${pkgs.coreutils}/bin/printf '%s' "$__prompt" >/dev/tty
+                read -r __value </dev/tty
                 printf -v "$__var_name" '%s' "$__value"
+              }
+
+              detect_install_iface() {
+                local iface=""
+                for iface in /sys/class/net/*; do
+                  iface="''${iface##*/}"
+                  case "$iface" in
+                    lo) continue ;;
+                  esac
+                  printf '%s\n' "$iface"
+                  return 0
+                done
+                return 1
               }
 
               octet_ok() {
@@ -97,8 +111,14 @@
                 validate_ipv4 "$ip"
               }
 
-              apply_static_eth0_and_ping() {
-                local iface=eth0
+              INSTALL_IFACE="$(detect_install_iface || true)"
+              [ -n "$INSTALL_IFACE" ] || {
+                echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
+                exit 1
+              }
+
+              apply_static_iface_and_ping() {
+                local iface="$INSTALL_IFACE"
                 if [ ! -e "/sys/class/net/''${iface}" ]; then
                   echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
                   return 1
@@ -121,7 +141,7 @@
                 return 0
               }
 
-              echo "[0/9] configuracao de rede (IPv4 estatico em eth0)"
+              echo "[0/9] configuracao de rede (IPv4 estatico em ''${INSTALL_IFACE})"
               NET_CIDR=""
               NET_GW=""
               while true; do
@@ -148,13 +168,14 @@
                 echo "  address = \"''${NET_IP}\";"
                 echo "  prefixLength = ''${NET_PREFIX};"
                 echo "  defaultGateway = \"''${NET_GW}\";"
-                echo "  interface = eth0 (sem DHCP nesta interface)"
+                echo "  interface = ''${INSTALL_IFACE} (sem DHCP nesta interface)"
                 echo ""
                 prompt_read ans "Confirmar e continuar a instalacao? [s/N]: "
+                ans="''${ans//[[:space:]]/}"
                 case "''${ans,,}" in
                   s|sim|y|yes)
                     echo "Testando conectividade (ping 8.8.8.8 e 1.1.1.1)..."
-                    if apply_static_eth0_and_ping; then
+                    if apply_static_iface_and_ping; then
                       break
                     fi
                     echo "Ajuste IP/gateway ou a rede e confirme de novo."
@@ -219,13 +240,12 @@
 
               echo "[6b/9] gravando network-static.nix"
               {
-                ${pkgs.coreutils}/bin/printf '%s\n' \
-                  '{ lib, ... }:' \
-                  '{' \
-                  '  networking.useDHCP = lib.mkForce false;' \
-                  '  networking.interfaces.eth0.useDHCP = lib.mkForce false;' \
-                  '  networking.interfaces.eth0.ipv4.addresses = [' \
-                  '    {'
+                ${pkgs.coreutils}/bin/printf '%s\n' '{ lib, ... }:'
+                ${pkgs.coreutils}/bin/printf '%s\n' '{'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  networking.useDHCP = lib.mkForce false;'
+                ${pkgs.coreutils}/bin/printf '  networking.interfaces.%s.useDHCP = lib.mkForce false;\n' "''${INSTALL_IFACE}"
+                ${pkgs.coreutils}/bin/printf '  networking.interfaces.%s.ipv4.addresses = [\n' "''${INSTALL_IFACE}"
+                ${pkgs.coreutils}/bin/printf '%s\n' '    {'
                 ${pkgs.coreutils}/bin/printf '      address = "%s";\n' "''${NET_IP}"
                 ${pkgs.coreutils}/bin/printf '      prefixLength = %s;\n' "''${NET_PREFIX}"
                 ${pkgs.coreutils}/bin/printf '%s\n' '    }' '  ];'
