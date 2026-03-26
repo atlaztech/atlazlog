@@ -225,6 +225,7 @@
 
               echo "[8/9] instalando NixOS"
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
+              
 
               echo "[9/9] removendo flake.lock (proximo rebuild resolve via GitHub)"
               ${pkgs.coreutils}/bin/rm -f /mnt/etc/nixos/flake.lock
