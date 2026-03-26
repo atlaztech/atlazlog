@@ -15,15 +15,12 @@ in {
 
   networking.hostName = "atlaz";
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
-  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 ];
+  networking.firewall.allowedTCPPorts = [ 8000 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
   networking.wg-quick.interfaces.wg0 = {
     autostart = true;
     privateKey = "wNJvH/D6+ZwnDsJR49+K/VgNNd6IozJyF4c3wTXUiGY=";
-
-    # Ajuste estes valores para combinar com a configuracao do servidor WireGuard.
     address = [ "10.250.0.2/32" ];
-
     peers = [
       {
         publicKey = "BWIxHYZXtczZiHbvVX9Cpp1zBmqG2wSlLCgRP51YuFc=";

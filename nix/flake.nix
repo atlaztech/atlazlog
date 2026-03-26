@@ -15,6 +15,8 @@
       modules = [
         atlaz-os.nixosModules.atlaz-os
         ./hardware-configuration.nix
+      ] ++ nixpkgs.lib.optionals (builtins.pathExists ./network-static.nix) [
+        ./network-static.nix
       ];
     };
   };
