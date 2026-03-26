@@ -15,7 +15,7 @@ in {
 
   networking.hostName = "atlaz";
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
-  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 51820 ];
+  networking.firewall.allowedTCPPorts = [ 8000 8123 9000 5432 6379 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
   networking.wg-quick.interfaces.wg0 = {
     autostart = true;
@@ -27,7 +27,7 @@ in {
     peers = [
       {
         publicKey = "BWIxHYZXtczZiHbvVX9Cpp1zBmqG2wSlLCgRP51YuFc=";
-        endpoint = "216.238.100.183:51820";
+        endpoint = "216.238.100.183:26983";
         allowedIPs = [ "10.250.0.0/24" ];
         persistentKeepalive = 25;
       }
