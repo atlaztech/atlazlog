@@ -67,12 +67,16 @@
                 local __var_name="$1"
                 local __prompt="$2"
                 local __value=""
+                local __status=0
                 if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
                   echo "ERRO: terminal interativo indisponivel em /dev/tty." >&2
                   return 1
                 fi
                 ${pkgs.coreutils}/bin/printf '%s' "$__prompt" >/dev/tty
-                read -r __value </dev/tty
+                ${pkgs.coreutils}/bin/printf '\033[0;32m' >/dev/tty
+                read -r __value </dev/tty || __status=$?
+                ${pkgs.coreutils}/bin/printf '\033[0m' >/dev/tty
+                [ "$__status" -eq 0 ] || return "$__status"
                 printf -v "$__var_name" '%s' "$__value"
               }
 
