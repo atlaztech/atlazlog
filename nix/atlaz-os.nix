@@ -8,17 +8,36 @@ in {
   boot.loader.grub.device = "nodev";
   boot.loader.grub.efiInstallAsRemovable = true;
 
-  boot.kernelParams = [ "console=ttyS0,115200" ];
+  # Proxmox NoCloud ainda espera nomes legados como eth0/eth1 para rede.
+  boot.kernelParams = [ "console=ttyS0,115200" "net.ifnames=0" "biosdevname=0" ];
   systemd.services."serial-getty@ttyS0".enable = true;
 
   fileSystems."/boot".options = [ "fmask=0077" "dmask=0077" ];
 
   networking.hostName = "atlaz";
+  networking.useDHCP = lib.mkDefault false;
+  networking.useNetworkd = true;
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
   networking.firewall.allowedTCPPorts = [ 8000 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
 
+  systemd.network.enable = true;
   systemd.services."systemd-networkd-wait-online".enable = lib.mkForce false;
+
+  services.cloud-init = {
+    enable = true;
+    network.enable = true;
+    settings = {
+      datasource_list = [ "NoCloud" "ConfigDrive" ];
+      system_info = {
+        distro = "nixos";
+        network.renderers = [ "networkd" ];
+      };
+      cloud_init_modules = [ "seed_random" ];
+      cloud_config_modules = [ ];
+      cloud_final_modules = [ ];
+    };
+  };
 
   systemd.tmpfiles.rules = [
     "d /var/lib/atlaz 0755 root root -"
