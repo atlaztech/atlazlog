@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 let
   masterPassword = "be4e224c-b18e-49b1-aac9-ca27190ea819";
 in {
@@ -27,10 +27,14 @@ in {
     configFile = "/var/lib/atlaz/wg0.conf";
   };
 
+  # Não puxar wg-quick no boot (o arquivo ainda não existe). Só o .path abaixo inicia o serviço.
+  systemd.services."wg-quick-wg0".wantedBy = lib.mkForce [ ];
   systemd.services."wg-quick-wg0".serviceConfig.ConditionPathExists = "/var/lib/atlaz/wg0.conf";
 
   systemd.paths.wg-quick-wg0-activate = {
     wantedBy = [ "paths.target" ];
+    after = [ "docker.service" ];
+    wants = [ "docker.service" ];
     pathConfig = {
       PathExists = "/var/lib/atlaz/wg0.conf";
       Unit = "wg-quick-wg0.service";
