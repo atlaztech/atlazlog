@@ -18,7 +18,7 @@ in {
   networking.firewall.allowedTCPPorts = [ 8000 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
 
-  systemd.services."systemd-networkd-wait-online".enable = false;
+  systemd.services."systemd-networkd-wait-online".enable = lib.mkForce false;
 
   systemd.tmpfiles.rules = [
     "d /var/lib/atlaz 0755 root root -"
