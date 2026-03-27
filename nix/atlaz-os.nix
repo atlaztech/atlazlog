@@ -94,11 +94,13 @@ in {
   systemd.services."docker-clickhouse" = {
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
+    restartTriggers = [ config.system.build.toplevel ];
   };
 
   systemd.services."docker-netflow" = {
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
+    restartTriggers = [ config.system.build.toplevel ];
   };
 
   users.users.root.hashedPassword = "$y$j9T$2oH4LFkNDPoMx6UPrcw0g.$RupKkWamcUJdr4qFAiZ7nE/mtq3G42PcBghpRTQnBSD";
