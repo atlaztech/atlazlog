@@ -89,6 +89,16 @@ in {
     };
   };
 
+  systemd.services."docker-clickhouse" = {
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+  };
+
+  systemd.services."docker-netflow" = {
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+  };
+
   users.users.root.hashedPassword = "$y$j9T$2oH4LFkNDPoMx6UPrcw0g.$RupKkWamcUJdr4qFAiZ7nE/mtq3G42PcBghpRTQnBSD";
 
   boot.kernel.sysctl."vm.overcommit_memory" = 1;

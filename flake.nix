@@ -81,11 +81,21 @@
               }
 
               detect_install_iface() {
-                local iface=""
-                for iface in /sys/class/net/*; do
-                  iface="''${iface##*/}"
+                local iface path
+                for path in /sys/class/net/*; do
+                  iface="''${path##*/}"
                   case "$iface" in
-                    lo) continue ;;
+                    lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
+                  esac
+                  if [ -e "$path/device" ]; then
+                    printf '%s\n' "$iface"
+                    return 0
+                  fi
+                done
+                for path in /sys/class/net/*; do
+                  iface="''${path##*/}"
+                  case "$iface" in
+                    lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
                   esac
                   printf '%s\n' "$iface"
                   return 0
@@ -173,6 +183,7 @@
                 echo "  prefixLength = ''${NET_PREFIX};"
                 echo "  defaultGateway = \"''${NET_GW}\";"
                 echo "  interface = ''${INSTALL_IFACE} (sem DHCP nesta interface)"
+                echo "  MAC = $(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address")"
                 echo ""
                 prompt_read ans "Confirmar e continuar a instalacao? [s/N]: "
                 ans="''${ans//[[:space:]]/}"
@@ -242,18 +253,21 @@
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
               ${pkgs.coreutils}/bin/cp ${self}/nix/flake.nix /mnt/etc/nixos/flake.nix
 
-              echo "[6b/9] gravando network-static.nix"
+              echo "[6b/9] gravando network-static.nix (por MAC, nome da iface pode mudar apos reboot)"
+              NIC_MAC=$(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address" | tr -d '[:space:]')
+              [ -n "$NIC_MAC" ] || { echo "ERRO: nao foi possivel ler MAC de ''${INSTALL_IFACE}"; exit 1; }
               {
                 ${pkgs.coreutils}/bin/printf '%s\n' '{ lib, ... }:'
                 ${pkgs.coreutils}/bin/printf '%s\n' '{'
                 ${pkgs.coreutils}/bin/printf '%s\n' '  networking.useDHCP = lib.mkForce false;'
-                ${pkgs.coreutils}/bin/printf '  networking.interfaces.%s.useDHCP = lib.mkForce false;\n' "''${INSTALL_IFACE}"
-                ${pkgs.coreutils}/bin/printf '  networking.interfaces.%s.ipv4.addresses = [\n' "''${INSTALL_IFACE}"
-                ${pkgs.coreutils}/bin/printf '%s\n' '    {'
-                ${pkgs.coreutils}/bin/printf '      address = "%s";\n' "''${NET_IP}"
-                ${pkgs.coreutils}/bin/printf '      prefixLength = %s;\n' "''${NET_PREFIX}"
-                ${pkgs.coreutils}/bin/printf '%s\n' '    }' '  ];'
-                ${pkgs.coreutils}/bin/printf '  networking.defaultGateway = "%s";\n' "''${NET_GW}"
+                ${pkgs.coreutils}/bin/printf '%s\n' '  networking.useNetworkd = true;'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  systemd.network.enable = true;'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  systemd.network.networks."10-atlaz-wan" = {'
+                ${pkgs.coreutils}/bin/printf '    matchConfig.MACAddress = "%s";\n' "$NIC_MAC"
+                ${pkgs.coreutils}/bin/printf '    networkConfig.Address = "%s/%s";\n' "''${NET_IP}" "''${NET_PREFIX}"
+                ${pkgs.coreutils}/bin/printf '    networkConfig.Gateway = "%s";\n' "''${NET_GW}"
+                ${pkgs.coreutils}/bin/printf '%s\n' '    linkConfig.RequiredForOnline = "yes";'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  };'
                 ${pkgs.coreutils}/bin/printf '%s\n' '}'
               } > /mnt/etc/nixos/network-static.nix
 
