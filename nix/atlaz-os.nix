@@ -17,18 +17,24 @@ in {
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
   networking.firewall.allowedTCPPorts = [ 8000 ];
   networking.firewall.allowedUDPPorts = [ 2055 ];
+
+  systemd.tmpfiles.rules = [
+    "d /var/lib/atlaz 0755 root root -"
+  ];
+
   networking.wg-quick.interfaces.wg0 = {
     autostart = true;
-    privateKey = "wNJvH/D6+ZwnDsJR49+K/VgNNd6IozJyF4c3wTXUiGY=";
-    address = [ "10.250.0.2/32" ];
-    peers = [
-      {
-        publicKey = "BWIxHYZXtczZiHbvVX9Cpp1zBmqG2wSlLCgRP51YuFc=";
-        endpoint = "216.238.100.183:26983";
-        allowedIPs = [ "10.250.0.0/24" ];
-        persistentKeepalive = 25;
-      }
-    ];
+    configFile = "/var/lib/atlaz/wg0.conf";
+  };
+
+  systemd.services."wg-quick-wg0".serviceConfig.ConditionPathExists = "/var/lib/atlaz/wg0.conf";
+
+  systemd.paths.wg-quick-wg0-activate = {
+    wantedBy = [ "paths.target" ];
+    pathConfig = {
+      PathExists = "/var/lib/atlaz/wg0.conf";
+      Unit = "wg-quick-wg0.service";
+    };
   };
   services.resolved.enable = true;
   time.timeZone = "UTC";
@@ -72,6 +78,7 @@ in {
       };
       volumes = [
         "pg_data:/var/lib/postgresql/data"
+        "/var/lib/atlaz:/var/lib/atlaz"
       ];
       dependsOn = [ "clickhouse" ];
       extraOptions = [ "--network=host" "--pull=always" "--privileged" ];
