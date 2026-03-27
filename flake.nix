@@ -29,18 +29,42 @@
           documentation.man.enable = false;
           documentation.nixos.enable = false;
 
+          boot.kernelParams = [ "net.ifnames=0" "biosdevname=0" ];
+
           environment.defaultPackages = lib.mkForce [];
           fonts.fontconfig.enable = lib.mkForce false;
           isoImage.squashfsCompression = null;
+          networking.useDHCP = lib.mkDefault false;
+          networking.useNetworkd = true;
           networking.wireless.enable = lib.mkForce false;
           services.udisks2.enable = lib.mkForce false;
+          systemd.network.enable = true;
           services.getty.autologinUser = lib.mkForce null;
           systemd.services."autovt@tty1".enable = lib.mkForce false;
           systemd.services."getty@tty1".enable = lib.mkForce false;
+          services.cloud-init = {
+            enable = true;
+            network.enable = true;
+            settings = {
+              datasource_list = [ "NoCloud" "ConfigDrive" ];
+              system_info = {
+                distro = "nixos";
+                network.renderers = [ "networkd" ];
+              };
+              cloud_init_modules = [ "seed_random" ];
+              cloud_config_modules = [ ];
+              cloud_final_modules = [ ];
+            };
+          };
+          systemd.services.cloud-init.wantedBy = lib.mkForce [ ];
+          systemd.services.cloud-config.wantedBy = lib.mkForce [ ];
+          systemd.services.cloud-final.wantedBy = lib.mkForce [ ];
 
           systemd.services.autoinstall = {
             wantedBy = [ "multi-user.target" ];
-            after = [ "local-fs.target" ];
+            after = [ "local-fs.target" "cloud-init-local.service" "network-online.target" ];
+            wants = [ "cloud-init-local.service" "network-online.target" ];
+            requires = [ "cloud-init-local.service" ];
             path = with pkgs; [
               bash coreutils util-linux parted dosfstools e2fsprogs
               nix nixos-install-tools git
@@ -60,6 +84,28 @@
 
               [ -e /tmp/done ] && exit 0
               ${pkgs.coreutils}/bin/touch /tmp/done
+
+              internet_ok() {
+                ${pkgs.iputils}/bin/ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && return 0
+                ${pkgs.iputils}/bin/ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 && return 0
+                ${pkgs.curl}/bin/curl -fsSI --connect-timeout 5 https://cache.nixos.org >/dev/null 2>&1 && return 0
+                return 1
+              }
+
+              echo "[0/8] verificando conectividade apos cloud-init"
+              if internet_ok; then
+                echo "Conectividade com a internet OK."
+              else
+                ${pkgs.coreutils}/bin/printf '\033[1;31m' >/dev/tty
+                echo "ALERTA: o cloud-init aplicou a rede, mas a VM ainda esta sem internet." >/dev/tty
+                echo "Revise gateway, rota padrao, bridge/NAT e regras do Proxmox." >/dev/tty
+                echo "Estado atual da rede:" >/dev/tty
+                ${pkgs.iproute2}/bin/ip -brief addr >/dev/tty || true
+                ${pkgs.iproute2}/bin/ip route >/dev/tty || true
+                ${pkgs.coreutils}/bin/printf '\033[0m' >/dev/tty
+                echo "Abortando a instalacao antes de particionar o disco." >/dev/tty
+                exit 1
+              fi
 
               echo "[1/8] detectando disco de instalacao"
               DISK=""
