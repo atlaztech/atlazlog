@@ -29,44 +29,22 @@
           documentation.man.enable = false;
           documentation.nixos.enable = false;
 
-          boot.kernelParams = [ "net.ifnames=0" "biosdevname=0" ];
-
           environment.defaultPackages = lib.mkForce [];
           fonts.fontconfig.enable = lib.mkForce false;
           isoImage.squashfsCompression = null;
-          networking.useDHCP = lib.mkDefault false;
-          networking.useNetworkd = true;
           networking.wireless.enable = lib.mkForce false;
           services.udisks2.enable = lib.mkForce false;
-          systemd.network.enable = true;
           services.getty.autologinUser = lib.mkForce null;
           systemd.services."autovt@tty1".enable = lib.mkForce false;
           systemd.services."getty@tty1".enable = lib.mkForce false;
-          services.cloud-init = {
-            enable = true;
-            network.enable = true;
-            settings = {
-              datasource_list = [ "NoCloud" "ConfigDrive" ];
-              system_info = {
-                distro = "nixos";
-                network.renderers = [ "networkd" ];
-              };
-              cloud_init_modules = [ "seed_random" ];
-              cloud_config_modules = [ ];
-              cloud_final_modules = [ ];
-            };
-          };
-          systemd.services.cloud-init.wantedBy = lib.mkForce [ ];
-          systemd.services.cloud-config.wantedBy = lib.mkForce [ ];
-          systemd.services.cloud-final.wantedBy = lib.mkForce [ ];
 
           systemd.services.autoinstall = {
             wantedBy = [ "multi-user.target" ];
-            after = [ "local-fs.target" "cloud-init-local.service" "network-online.target" ];
-            wants = [ "cloud-init-local.service" "network-online.target" ];
-            requires = [ "cloud-init-local.service" ];
+            after = [ "local-fs.target" "network-online.target" ];
+            wants = [ "network-online.target" ];
             path = with pkgs; [
               bash coreutils util-linux parted dosfstools e2fsprogs
+              iproute2 iputils
               nix nixos-install-tools git
             ];
             serviceConfig = {
@@ -85,29 +63,147 @@
               [ -e /tmp/done ] && exit 0
               ${pkgs.coreutils}/bin/touch /tmp/done
 
-              internet_ok() {
-                ${pkgs.iputils}/bin/ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && return 0
-                ${pkgs.iputils}/bin/ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 && return 0
-                ${pkgs.curl}/bin/curl -fsSI --connect-timeout 5 https://cache.nixos.org >/dev/null 2>&1 && return 0
+              prompt_read() {
+                local __var_name="$1"
+                local __prompt="$2"
+                local __value=""
+                local __status=0
+                if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+                  echo "ERRO: terminal interativo indisponivel em /dev/tty." >&2
+                  return 1
+                fi
+                ${pkgs.coreutils}/bin/printf '\033[0;32m%s\n\033[0m' "$__prompt" >/dev/tty
+                ${pkgs.coreutils}/bin/printf '\033[1;37m' >/dev/tty
+                read -r __value </dev/tty || __status=$?
+                ${pkgs.coreutils}/bin/printf '\033[0m' >/dev/tty
+                [ "$__status" -eq 0 ] || return "$__status"
+                printf -v "$__var_name" '%s' "$__value"
+              }
+
+              detect_install_iface() {
+                local iface path
+                for path in /sys/class/net/*; do
+                  iface="''${path##*/}"
+                  case "$iface" in
+                    lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
+                  esac
+                  if [ -e "$path/device" ]; then
+                    printf '%s\n' "$iface"
+                    return 0
+                  fi
+                done
+                for path in /sys/class/net/*; do
+                  iface="''${path##*/}"
+                  case "$iface" in
+                    lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
+                  esac
+                  printf '%s\n' "$iface"
+                  return 0
+                done
                 return 1
               }
 
-              echo "[0/8] verificando conectividade apos cloud-init"
-              if internet_ok; then
-                echo "Conectividade com a internet OK."
-              else
-                ${pkgs.coreutils}/bin/printf '\033[1;31m' >/dev/tty
-                echo "ALERTA: o cloud-init aplicou a rede, mas a VM ainda esta sem internet." >/dev/tty
-                echo "Revise gateway, rota padrao, bridge/NAT e regras do Proxmox." >/dev/tty
-                echo "Estado atual da rede:" >/dev/tty
-                ${pkgs.iproute2}/bin/ip -brief addr >/dev/tty || true
-                ${pkgs.iproute2}/bin/ip route >/dev/tty || true
-                ${pkgs.coreutils}/bin/printf '\033[0m' >/dev/tty
-                echo "Abortando a instalacao antes de particionar o disco." >/dev/tty
-                exit 1
-              fi
+              octet_ok() {
+                local n="$1"
+                [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 0 ] && [ "$n" -le 255 ]
+              }
 
-              echo "[1/8] detectando disco de instalacao"
+              validate_ipv4() {
+                local ip="$1" IFS=.
+                [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}''$ ]] || return 1
+                read -r o1 o2 o3 o4 <<<"$ip"
+                octet_ok "$o1" && octet_ok "$o2" && octet_ok "$o3" && octet_ok "$o4"
+              }
+
+              validate_cidr() {
+                local cidr="$1" ip prefix
+                [[ "$cidr" == */* ]] || return 1
+                ip="''${cidr%/*}"
+                prefix="''${cidr#*/}"
+                [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+                [ "$prefix" -ge 0 ] && [ "$prefix" -le 32 ] || return 1
+                validate_ipv4 "$ip"
+              }
+
+              INSTALL_IFACE="$(detect_install_iface || true)"
+              [ -n "$INSTALL_IFACE" ] || {
+                echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
+                exit 1
+              }
+
+              apply_static_iface_and_ping() {
+                local iface="$INSTALL_IFACE"
+                if [ ! -e "/sys/class/net/''${iface}" ]; then
+                  echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
+                  return 1
+                fi
+                ${pkgs.iproute2}/bin/ip link set "$iface" up
+                ${pkgs.iproute2}/bin/ip route flush default 2>/dev/null || true
+                ${pkgs.iproute2}/bin/ip addr flush dev "$iface"
+                ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
+                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface"
+                ${pkgs.coreutils}/bin/sleep 1
+                if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 8.8.8.8 >/dev/null 2>&1; then
+                  echo "Falha: sem resposta ao ping 8.8.8.8."
+                  return 1
+                fi
+                if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 1.1.1.1 >/dev/null 2>&1; then
+                  echo "Falha: sem resposta ao ping 1.1.1.1."
+                  return 1
+                fi
+                echo "Conectividade OK (8.8.8.8 e 1.1.1.1)."
+                return 0
+              }
+
+              echo "[0/9] configuracao de rede (IPv4 estatico em ''${INSTALL_IFACE})"
+              NET_CIDR=""
+              NET_GW=""
+              while true; do
+                while true; do
+                  prompt_read NET_CIDR "Endereco IPv4 com mascara CIDR (ex: 192.168.1.10/24): "
+                  NET_CIDR="''${NET_CIDR//[[:space:]]/}"
+                  if validate_cidr "$NET_CIDR"; then
+                    break
+                  fi
+                  echo "Formato invalido. Use algo como 192.168.1.10/24"
+                done
+                NET_IP="''${NET_CIDR%/*}"
+                NET_PREFIX="''${NET_CIDR#*/}"
+                while true; do
+                  prompt_read NET_GW "Gateway IPv4 (ex: 192.168.1.1): "
+                  NET_GW="''${NET_GW//[[:space:]]/}"
+                  if validate_ipv4 "$NET_GW"; then
+                    break
+                  fi
+                  echo "Gateway invalido."
+                done
+                echo ""
+                echo "Resumo:"
+                echo "  address = \"''${NET_IP}\";"
+                echo "  prefixLength = ''${NET_PREFIX};"
+                echo "  defaultGateway = \"''${NET_GW}\";"
+                echo "  interface = ''${INSTALL_IFACE} (sem DHCP nesta interface)"
+                echo "  MAC = $(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address")"
+                echo ""
+                prompt_read ans "Confirmar e continuar a instalacao? [s/N]: "
+                ans="''${ans//[[:space:]]/}"
+                case "''${ans,,}" in
+                  s|sim|y|yes)
+                    echo "Testando conectividade (ping 8.8.8.8 e 1.1.1.1)..."
+                    if apply_static_iface_and_ping; then
+                      break
+                    fi
+                    echo "Ajuste IP/gateway ou a rede e confirme de novo."
+                    echo ""
+                    ;;
+                  *)
+                    echo "Tente novamente."
+                    echo ""
+                    ;;
+                esac
+              done
+
+              echo "[1/9] detectando disco de instalacao"
               DISK=""
               for _ in $(seq 1 60); do
                 for d in /dev/vda /dev/sda /dev/nvme0n1; do
@@ -129,13 +225,13 @@
                 PART2="''${DISK}2"
               fi
 
-              echo "[2/8] particionando disco $DISK"
+              echo "[2/9] particionando disco $DISK"
               ${pkgs.parted}/bin/parted -s "$DISK" mklabel gpt
               ${pkgs.parted}/bin/parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
               ${pkgs.parted}/bin/parted -s "$DISK" set 1 esp on
               ${pkgs.parted}/bin/parted -s "$DISK" mkpart primary ext4 513MiB 100%
 
-              echo "[3/8] aguardando particoes"
+              echo "[3/9] aguardando particoes"
               for _ in $(seq 1 120); do
                 ${pkgs.util-linux}/bin/partprobe "$DISK" 2>/dev/null || true
                 [ -b "$PART1" ] && [ -b "$PART2" ] && break
@@ -144,30 +240,31 @@
               [ -b "$PART1" ]
               [ -b "$PART2" ]
 
-              echo "[4/8] formatando particoes"
+              echo "[4/9] formatando particoes"
               ${pkgs.dosfstools}/bin/mkfs.vfat -F32 "$PART1"
               ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F "$PART2"
 
-              echo "[5/8] montando sistema de arquivos"
+              echo "[5/9] montando sistema de arquivos"
               ${pkgs.util-linux}/bin/mount "$PART2" /mnt
               ${pkgs.coreutils}/bin/mkdir -p /mnt/boot
               ${pkgs.util-linux}/bin/mount "$PART1" /mnt/boot
 
-              echo "[6/8] gerando hardware-configuration e copiando config do host"
+              echo "[6/9] gerando hardware-configuration e copiando config do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
               ${pkgs.coreutils}/bin/cp ${self}/nix/flake.nix /mnt/etc/nixos/flake.nix
 
-              echo "[6b/8] rede do sistema final sera configurada pelo cloud-init do Proxmox"
+              echo "[6b/9] mantendo IP apenas durante a instalacao; o sistema final usara cloud-init do Proxmox"
 
-              echo "[7/8] resolvendo flake.lock offline (via store paths)"
+              echo "[7/9] resolvendo flake.lock offline (via store paths)"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
                 --override-input atlaz-os path:${self} \
                 --override-input nixpkgs path:${nixpkgs}
 
-              echo "[8/8] instalando NixOS"
+              echo "[8/9] instalando NixOS"
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
               
-              echo "[final] removendo flake.lock (proximo rebuild resolve via GitHub)"
+
+              echo "[9/9] removendo flake.lock (proximo rebuild resolve via GitHub)"
               ${pkgs.coreutils}/bin/rm -f /mnt/etc/nixos/flake.lock
               echo "[final] reiniciando sistema"
               ${pkgs.systemd}/bin/systemctl reboot
