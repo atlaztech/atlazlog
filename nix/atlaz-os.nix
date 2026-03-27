@@ -29,7 +29,7 @@ in {
 
   # Não puxar wg-quick no boot (o arquivo ainda não existe). Só o .path abaixo inicia o serviço.
   systemd.services."wg-quick-wg0".wantedBy = lib.mkForce [ ];
-  systemd.services."wg-quick-wg0".serviceConfig.ConditionPathExists = "/var/lib/atlaz/wg0.conf";
+  systemd.services."wg-quick-wg0".unitConfig.ConditionPathExists = "/var/lib/atlaz/wg0.conf";
 
   systemd.paths.wg-quick-wg0-activate = {
     wantedBy = [ "paths.target" ];
