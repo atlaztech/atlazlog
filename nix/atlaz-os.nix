@@ -177,6 +177,7 @@ in {
     '';
 
     systemPackages = with pkgs; [
+      net-snmp
       tcpdump
       wget
       curl
