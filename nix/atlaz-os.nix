@@ -48,7 +48,7 @@ in {
         wants = [ "network-online.target" ];
       };
 
-      "docker-netflow" = {
+      "docker-atlazlog" = {
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
       };
@@ -130,8 +130,8 @@ in {
         extraOptions = [ "--network=host" ];
       };
 
-      containers.netflow = {
-        image = "atlaztech/netflow:latest";
+      containers.atlazlog = {
+        image = "atlaztech/atlazlog:latest";
         environment = {
           APP_ENV = "production";
           APP_DEBUG = "false";
@@ -155,7 +155,7 @@ in {
       text = ''
         if [ -z "''${NIXOS_ACTION:-}" ] || [ "''${NIXOS_ACTION}" = "switch" ]; then
           ${pkgs.systemd}/bin/systemctl try-restart docker-clickhouse.service || true
-          ${pkgs.systemd}/bin/systemctl try-restart docker-netflow.service || true
+          ${pkgs.systemd}/bin/systemctl try-restart docker-atlazlog.service || true
         fi
       '';
     };
