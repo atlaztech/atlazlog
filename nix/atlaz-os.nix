@@ -10,7 +10,7 @@ in {
       device = "nodev";
       efiInstallAsRemovable = true;
     };
-    # Proxmox NoCloud ainda espera nomes legados como eth0/eth1 para rede.
+    # Nomes de iface estaveis (eth0/eth1) em VM; network-static.nix casa por MAC.
     kernelParams = [ "console=ttyS0,115200" "net.ifnames=0" "biosdevname=0" ];
     kernel.sysctl."vm.overcommit_memory" = 1;
   };

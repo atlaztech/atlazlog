@@ -143,6 +143,9 @@
                 ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
                 ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface"
                 ${pkgs.coreutils}/bin/sleep 1
+                # Rede estatica nao preenche resolv.conf; sem isso o Nix nao resolve cache.nixos.org
+                ${pkgs.coreutils}/bin/rm -f /etc/resolv.conf
+                ${pkgs.coreutils}/bin/printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > /etc/resolv.conf
                 if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 8.8.8.8 >/dev/null 2>&1; then
                   echo "Falha: sem resposta ao ping 8.8.8.8."
                   return 1
@@ -151,7 +154,11 @@
                   echo "Falha: sem resposta ao ping 1.1.1.1."
                   return 1
                 fi
-                echo "Conectividade OK (8.8.8.8 e 1.1.1.1)."
+                if ! ${pkgs.iputils}/bin/ping -c 2 -W 6 cache.nixos.org >/dev/null 2>&1; then
+                  echo "Falha: DNS ou acesso a cache.nixos.org (verifique resolv.conf / firewall)."
+                  return 1
+                fi
+                echo "Conectividade OK (8.8.8.8, 1.1.1.1 e cache.nixos.org)."
                 return 0
               }
 
@@ -253,7 +260,23 @@
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
               ${pkgs.coreutils}/bin/cp ${self}/nix/flake.nix /mnt/etc/nixos/flake.nix
 
-              echo "[6b/9] mantendo IP apenas durante a instalacao; o sistema final usara cloud-init do Proxmox"
+              echo "[6b/9] gravando network-static.nix (por MAC, nome da iface pode mudar apos reboot)"
+              NIC_MAC=$(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address" | tr -d '[:space:]')
+              [ -n "$NIC_MAC" ] || { echo "ERRO: nao foi possivel ler MAC de ''${INSTALL_IFACE}"; exit 1; }
+              {
+                ${pkgs.coreutils}/bin/printf '%s\n' '{ lib, ... }:'
+                ${pkgs.coreutils}/bin/printf '%s\n' '{'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  networking.useDHCP = lib.mkForce false;'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  networking.useNetworkd = true;'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  systemd.network.enable = true;'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  systemd.network.networks."10-atlaz-wan" = {'
+                ${pkgs.coreutils}/bin/printf '    matchConfig.MACAddress = "%s";\n' "$NIC_MAC"
+                ${pkgs.coreutils}/bin/printf '    networkConfig.Address = "%s/%s";\n' "''${NET_IP}" "''${NET_PREFIX}"
+                ${pkgs.coreutils}/bin/printf '    networkConfig.Gateway = "%s";\n' "''${NET_GW}"
+                ${pkgs.coreutils}/bin/printf '%s\n' '    linkConfig.RequiredForOnline = "yes";'
+                ${pkgs.coreutils}/bin/printf '%s\n' '  };'
+                ${pkgs.coreutils}/bin/printf '%s\n' '}'
+              } > /mnt/etc/nixos/network-static.nix
 
               echo "[7/9] resolvendo flake.lock offline (via store paths)"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
