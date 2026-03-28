@@ -1,14 +1,20 @@
 {
   description = "AtlazLog – NixOS base module + installer ISO";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    atlazlog-host = {
+      url = "path:./nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, atlazlog-host }:
   let
     system = "x86_64-linux";
   in {
 
-    nixosModules.atlaz-os = import ./nix/atlaz-os.nix;
+    nixosModules."atlaz-os" = atlazlog-host.nixosModules."atlaz-os";
 
     # ISO de instalação automática
     nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
@@ -280,7 +286,6 @@
 
               echo "[7/9] resolvendo flake.lock offline (via store paths)"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
-                --override-input atlaz-os path:${self} \
                 --override-input nixpkgs path:${nixpkgs}
 
               echo "[8/9] instalando NixOS"

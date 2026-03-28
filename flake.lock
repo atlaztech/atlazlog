@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "atlazlog-host": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./nix",
+        "type": "path"
+      },
+      "original": {
+        "path": "./nix",
+        "type": "path"
+      },
+      "parent": []
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1773964973,
@@ -18,6 +34,7 @@
     },
     "root": {
       "inputs": {
+        "atlazlog-host": "atlazlog-host",
         "nixpkgs": "nixpkgs"
       }
     }
