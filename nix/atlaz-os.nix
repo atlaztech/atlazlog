@@ -21,7 +21,7 @@ in {
     hostName = "atlaz";
     useDHCP = lib.mkDefault false;
     useNetworkd = true;
-    nameservers = [ "1.1.1.1" "8.8.8.8" ];
+    nameservers = [ 208.67.222.222" "208.67.220.220" ];
     firewall = {
       allowedTCPPorts = [ 8000 ];
       allowedUDPPorts = [ 2055 ];
