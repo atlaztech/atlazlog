@@ -1,6 +1,19 @@
 { config, pkgs, lib, ... }:
 let
   masterPassword = "be4e224c-b18e-49b1-aac9-ca27190ea819";
+
+  net-snmp-atlaz = pkgs.runCommand "net-snmp-atlaz" {
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+  } ''
+    mkdir -p "$out"
+    cp -rs ${pkgs.net-snmp}/* "$out/"
+    chmod -R u+w "$out"
+    for cmd in snmpget snmpwalk snmpbulkget snmpbulkwalk; do
+      rm -f "$out/bin/$cmd"
+      makeWrapper ${pkgs.net-snmp}/bin/$cmd "$out/bin/$cmd" \
+        --add-flags "-OQn -Ih -t 3 -r 3"
+    done
+  '';
 in {
 
   boot = {
@@ -170,14 +183,8 @@ in {
   };
 
   environment = {
-    etc."snmp/snmp.conf".text = ''
-      printNumericOids 1
-      quickPrinting 1
-      noDisplayHint 1
-    '';
-
     systemPackages = with pkgs; [
-      net-snmp
+      net-snmp-atlaz
       tcpdump
       wget
       curl
