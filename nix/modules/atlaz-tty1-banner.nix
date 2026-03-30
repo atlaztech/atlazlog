@@ -1,10 +1,39 @@
 { config, pkgs, lib, ... }:
 let
-  genIssue = pkgs.writeShellScript "gen-tty1-issue.sh" ''
+  cfg = config.services.getty;
+  issuePath = "/run/console-issue/issue";
+  issueDir = "/run/console-issue";
+
+  hasSerialConsole = lib.any (p: lib.hasInfix "console=ttyS0" p) config.boot.kernelParams;
+
+  agettyExe = lib.getExe' pkgs.util-linux "agetty";
+
+  autovtExec = lib.escapeShellArgs [
+    agettyExe
+    "--login-program"
+    (toString cfg.loginProgram)
+    "--issue-file"
+    issuePath
+    "--noclear"
+    "tty1"
+    "linux"
+  ];
+
+  serialExec = "${lib.escapeShellArgs [
+    agettyExe
+    "--login-program"
+    (toString cfg.loginProgram)
+    "--issue-file"
+    issuePath
+    "ttyS0"
+    "--keep-baud"
+  ]} $TERM";
+
+  genIssue = pkgs.writeShellScript "gen-console-issue.sh" ''
     set -euo pipefail
-    DIR=/run/tty1-issue
+    DIR=${issueDir}
     mkdir -p "$DIR"
-    OUT="$DIR/issue"
+    OUT=${issuePath}
 
     host=$(hostname -s 2>/dev/null || echo "?")
     cpus=$(nproc 2>/dev/null || echo "?")
@@ -54,12 +83,16 @@ let
       printf '\n'
     } > "$OUT"
   '';
+
+  consoleIssueDeps =
+    [ "autovt@tty1.service" ]
+    ++ lib.optionals hasSerialConsole [ "serial-getty@ttyS0.service" ];
 in
 lib.mkIf config.console.enable {
-  systemd.services.tty1-issue = {
-    description = "Gera /run/tty1-issue/issue antes do login no tty1";
-    before = [ "autovt@tty1.service" ];
-    requiredBy = [ "autovt@tty1.service" ];
+  systemd.services.console-issue = {
+    description = "Gera issue dinâmico antes do login (tty1 / serial)";
+    before = consoleIssueDeps;
+    requiredBy = consoleIssueDeps;
     after = [ "local-fs.target" ];
     serviceConfig = {
       Type = "oneshot";
@@ -68,20 +101,21 @@ lib.mkIf config.console.enable {
     };
   };
 
-  # NixOS usa autovt@tty1, não getty@tty1, para consoles virtuais.
   systemd.services."autovt@tty1" = {
-    after = [ "tty1-issue.service" ];
-    requires = [ "tty1-issue.service" ];
+    after = [ "console-issue.service" ];
+    requires = [ "console-issue.service" ];
     serviceConfig.ExecStart = lib.mkForce [
       ""
-      "${lib.getExe' pkgs.util-linux "agetty"}"
-      "--login-program"
-      config.services.getty.loginProgram
-      "--issue-file"
-      "/run/tty1-issue/issue"
-      "--noclear"
-      "tty1"
-      "linux"
+      autovtExec
+    ];
+  };
+
+  systemd.services."serial-getty@ttyS0" = lib.mkIf hasSerialConsole {
+    after = [ "console-issue.service" ];
+    requires = [ "console-issue.service" ];
+    serviceConfig.ExecStart = lib.mkForce [
+      ""
+      serialExec
     ];
   };
 }

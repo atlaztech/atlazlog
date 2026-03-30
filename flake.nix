@@ -145,7 +145,7 @@
                 ${pkgs.coreutils}/bin/sleep 1
                 # Rede estatica nao preenche resolv.conf; sem isso o Nix nao resolve cache.nixos.org
                 ${pkgs.coreutils}/bin/rm -f /etc/resolv.conf
-                ${pkgs.coreutils}/bin/printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' > /etc/resolv.conf
+                ${pkgs.coreutils}/bin/printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' 'nameserver 208.67.222.222' 'nameserver 208.67.220.220' > /etc/resolv.conf
                 if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 8.8.8.8 >/dev/null 2>&1; then
                   echo "Falha: sem resposta ao ping 8.8.8.8."
                   return 1
@@ -284,8 +284,11 @@
                 --override-input nixpkgs path:${nixpkgs}
 
               echo "[8/9] instalando NixOS"
+              if ! ${pkgs.iputils}/bin/ping -c 2 -W 6 cache.nixos.org >/dev/null 2>&1; then
+                echo "ERRO: cache.nixos.org nao resolve ou nao responde antes do nixos-install (DNS/rede)." >&2
+                exit 1
+              fi
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
-              
 
               echo "[9/9] removendo flake.lock (proximo rebuild resolve via GitHub)"
               ${pkgs.coreutils}/bin/rm -f /mnt/etc/nixos/flake.lock
