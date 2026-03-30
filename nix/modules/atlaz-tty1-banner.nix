@@ -8,19 +8,18 @@ let
 
   agettyExe = lib.getExe' pkgs.util-linux "agetty";
 
-  autovtExec = lib.escapeShellArgs [
-    agettyExe
+  # Mesmo padrão que nixpkgs nixos/modules/services/ttys/getty.nix: argv via escapeShellArgs só nos flags,
+  # sem embrulhar o binário inteiro (systemd não interpreta quoting de shell como o bash).
+  autovtExec = "${agettyExe} ${lib.escapeShellArgs [
     "--login-program"
     (toString cfg.loginProgram)
     "--issue-file"
     issuePath
     "--noclear"
     "tty1"
-    "linux"
-  ];
+  ]} $TERM";
 
-  serialExec = "${lib.escapeShellArgs [
-    agettyExe
+  serialExec = "${agettyExe} ${lib.escapeShellArgs [
     "--login-program"
     (toString cfg.loginProgram)
     "--issue-file"
