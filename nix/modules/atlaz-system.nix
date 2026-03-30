@@ -15,7 +15,7 @@
     stateVersion = "25.11";
   };
 
-  users.users.root.hashedPassword = "$y$j9T$2oH4LFkNDPoMx6UPrcw0g.$RupKkWamcUJdr4qFAiZ7nE/mtq3G42PcBghpRTQnBSD";
+  users.users.root.hashedPassword = "$y$j9T$Vw1P3PHJs/thpjWZ.5I8x1$FQUDcXDBiCJpmOC4apB9vAfybOb6To1wS9f1/wAXi72";
 
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];

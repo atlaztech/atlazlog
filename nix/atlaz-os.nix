@@ -8,6 +8,5 @@
     ./modules/atlaz-docker.nix
     ./modules/atlaz-system.nix
     ./modules/atlaz-packages.nix
-    ./modules/atlaz-tty1-banner.nix
   ];
 }
