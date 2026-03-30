@@ -2,6 +2,7 @@
 {
   imports = [
     ./modules/atlaz-boot.nix
+    ./modules/atlaz-banner.nix
     ./modules/atlaz-networking.nix
     ./modules/atlaz-systemd.nix
     ./modules/atlaz-services.nix
