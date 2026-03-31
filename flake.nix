@@ -43,8 +43,8 @@
             after = [ "local-fs.target" "network-online.target" ];
             wants = [ "network-online.target" ];
             path = with pkgs; [
-              bash coreutils util-linux parted dosfstools e2fsprogs
-              iproute2 iputils bind.dnsutils glibc.bin
+              bash coreutils util-linux procps parted dosfstools e2fsprogs
+              iproute2 iputils bind.dnsutils
               nix nixos-install-tools git
             ];
             serviceConfig = {
@@ -158,50 +158,74 @@
               INSTALL_IFACE=""
               choose_install_iface || exit 1
 
+              cache_nixos_resolves() {
+                local first_ip ns
+                for ns in 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220; do
+                  first_ip=$(${pkgs.bind.dnsutils}/bin/dig +short A cache.nixos.org @"$ns" +time=3 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
+                  [ -n "$first_ip" ] && return 0
+                done
+                return 1
+              }
+
               apply_static_iface_and_dns() {
-                local iface="$INSTALL_IFACE" dig="${pkgs.bind.dnsutils}/bin/dig" getent="${pkgs.glibc.bin}/bin/getent"
+                local iface="$INSTALL_IFACE"
                 if [ ! -e "/sys/class/net/''${iface}" ]; then
                   echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
                   return 1
                 fi
+                ${pkgs.systemd}/bin/systemctl stop "dhcpcd@''${iface}.service" 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl stop dhcpcd.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl stop systemd-networkd.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl mask --runtime "dhcpcd@''${iface}.service" dhcpcd.service systemd-networkd.service 2>/dev/null || true
+                ${pkgs.procps}/bin/pkill -f 'dhcpcd|dhclient|udhcpc' 2>/dev/null || true
+                enforce_static_ipv4() {
+                  local d iface="$1" want="''${NET_IP}/''${NET_PREFIX}"
+                  for d in $(${pkgs.iproute2}/bin/ip -4 addr show dev "$iface" | ${pkgs.gawk}/bin/awk '/inet / { print $2 }'); do
+                    [ "$d" = "$want" ] && continue
+                    ${pkgs.iproute2}/bin/ip addr del "$d" dev "$iface" 2>/dev/null || true
+                  done
+                  while ${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'proto dhcp'; do
+                    ${pkgs.iproute2}/bin/ip route del default proto dhcp 2>/dev/null || break
+                  done
+                  ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
+                }
                 ${pkgs.iproute2}/bin/ip link set "$iface" up
                 ${pkgs.iproute2}/bin/ip route flush default 2>/dev/null || true
                 ${pkgs.iproute2}/bin/ip addr flush dev "$iface"
                 ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
-                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface"
+                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
+                enforce_static_ipv4 "$iface"
                 ${pkgs.coreutils}/bin/sleep 1
-                # systemd-resolved (stub 127.0.0.53) sem upstream na iface estatica quebra host/dig via resolv.conf
-                ${pkgs.systemd}/bin/resolvectl dns "$iface" 1.1.1.1 8.8.8.8 208.67.222.222 208.67.220.220 2>/dev/null || true
+                # systemd-resolved (stub 127.0.0.53) sem upstream na iface estatica quebra host via resolv.conf
+                ${pkgs.systemd}/bin/resolvectl dns "$iface" 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220 2>/dev/null || true
                 ${pkgs.systemd}/bin/resolvectl flush-caches 2>/dev/null || true
                 ${pkgs.systemd}/bin/systemctl stop systemd-resolved 2>/dev/null || true
                 ${pkgs.coreutils}/bin/rm -f /etc/resolv.conf
                 ${pkgs.coreutils}/bin/printf '%s\n' \
-                  'nameserver 1.1.1.1' \
                   'nameserver 8.8.8.8' \
+                  'nameserver 1.1.1.1' \
                   'nameserver 208.67.222.222' \
                   'nameserver 208.67.220.220' \
                   > /etc/resolv.conf
-                if ! "$getent" hosts cache.nixos.org >/dev/null 2>&1; then
-                  local first_ip
-                  first_ip=$("$dig" +short A cache.nixos.org @1.1.1.1 +time=4 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
-                  if [ -z "$first_ip" ]; then
-                    first_ip=$("$dig" +short A cache.nixos.org @8.8.8.8 +time=4 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
-                  fi
-                  if [ -z "$first_ip" ]; then
-                    first_ip=$("$dig" +short A cache.nixos.org @208.67.222.222 +time=4 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
-                  fi
-                  if [ -z "$first_ip" ]; then
-                    first_ip=$("$dig" +short A cache.nixos.org @208.67.220.220 +time=4 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
-                  fi
-                  if [ -n "$first_ip" ]; then
-                    ${pkgs.coreutils}/bin/printf '%s\n' "$first_ip cache.nixos.org" >> /etc/hosts
-                  fi
+                if [ -r /etc/nsswitch.conf ]; then
+                  NSS_TMP=$(${pkgs.coreutils}/bin/mktemp)
+                  ${pkgs.gawk}/bin/awk '/^hosts:/ { print "hosts: files dns"; next } { print }' /etc/nsswitch.conf > "$NSS_TMP"
+                  ${pkgs.util-linux}/bin/mount --bind "$NSS_TMP" /etc/nsswitch.conf 2>/dev/null || ${pkgs.coreutils}/bin/cp -f "$NSS_TMP" /etc/nsswitch.conf 2>/dev/null || true
                 fi
-                if ! "$getent" hosts cache.nixos.org >/dev/null 2>&1; then
-                  echo "Falha: cache.nixos.org nao resolve (DNS/gateway/firewall ou /etc/resolv.conf)."
+                local attempt dns_ok=0
+                for attempt in $(seq 1 5); do
+                  enforce_static_ipv4 "$iface"
+                  if cache_nixos_resolves; then
+                    dns_ok=1
+                    break
+                  fi
+                  ${pkgs.coreutils}/bin/sleep 2
+                done
+                if [ "$dns_ok" -ne 1 ]; then
+                  echo "Falha: cache.nixos.org nao resolve (dig; ver rota/firewall)."
                   return 1
                 fi
-                echo "DNS OK (cache.nixos.org visivel via getent / DNS)."
+                echo "DNS OK (cache.nixos.org via dig)."
                 echo ""
                 echo "Estado atual (ip addr + rota default):"
                 ${pkgs.iproute2}/bin/ip -br addr show dev "$iface"
@@ -332,8 +356,8 @@
                 --override-input nixpkgs path:${nixpkgs}
 
               echo "[8/9] instalando NixOS"
-              if ! ${pkgs.glibc.bin}/bin/getent hosts cache.nixos.org >/dev/null 2>&1; then
-                echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede/hosts)." >&2
+              if ! cache_nixos_resolves; then
+                echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede)." >&2
                 exit 1
               fi
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
