@@ -95,34 +95,37 @@
                   echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
                   return 1
                 fi
-                echo "Interfaces de rede (escolha antes de informar o IP):"
+                ${pkgs.coreutils}/bin/printf '\033[0;36m%s\n' "Interfaces de rede (escolha antes de informar o IP):"
                 i=1
                 while IFS= read -r iface; do
                   [ -z "$iface" ] && continue
                   mac=$(${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${iface}/address" 2>/dev/null || echo "?")
-                  echo "  ''${i}) ''${iface}  (MAC: ''${mac})"
+                  ${pkgs.coreutils}/bin/printf '  %s) %s  (MAC: %s)\n' "''${i}" "''${iface}" "''${mac}"
                   i=$((i+1))
                 done < "$list_file"
+                ${pkgs.coreutils}/bin/printf '\033[0m\n'
                 while true; do
-                  prompt_read choice "Numero da lista ou nome da interface (ex: enp0s3): "
+                  prompt_read choice "Numero da lista (1, 2, ...): "
                   choice="''${choice//[[:space:]]/}"
-                  [ -z "$choice" ] && { echo "Informe um numero ou nome."; continue; }
+                  [ -z "$choice" ] && { echo "Informe o numero da lista."; continue; }
                   case "$choice" in
                     *[!0-9]*)
-                      iface="$choice"
-                      if [ ! -e "/sys/class/net/''${iface}" ]; then
-                        echo "Interface ''${iface} nao existe. Use ip link para ver os nomes."
-                        continue
-                      fi
-                      ;;
-                    *)
-                      iface=$(${pkgs.coreutils}/bin/sed -n "''${choice}p" "$list_file")
-                      if [ -z "$iface" ] || [ ! -e "/sys/class/net/''${iface}" ]; then
-                        echo "Numero invalido."
-                        continue
-                      fi
+                      echo "Apenas o numero da lista (nao use o nome da interface)."
+                      continue
                       ;;
                   esac
+                  iface=""
+                  i=0
+                  while IFS= read -r line; do
+                    i=$((i+1))
+                    [ "$i" -eq "$choice" ] || continue
+                    iface="$line"
+                    break
+                  done < "$list_file"
+                  if [ -z "$iface" ] || [ ! -e "/sys/class/net/''${iface}" ]; then
+                    echo "Numero invalido."
+                    continue
+                  fi
                   INSTALL_IFACE="$iface"
                   ${pkgs.coreutils}/bin/rm -f "$list_file"
                   echo "Interface selecionada: ''${INSTALL_IFACE}"
@@ -162,7 +165,6 @@
                   return 1
                 fi
                 ${pkgs.iproute2}/bin/ip link set "$iface" up
-                ${pkgs.iproute2}/bin/ip route flush default 2>/dev/null || true
                 ${pkgs.iproute2}/bin/ip addr flush dev "$iface"
                 ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
                 ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface"
@@ -175,6 +177,11 @@
                   return 1
                 fi
                 echo "DNS OK (cache.nixos.org resolve)."
+                echo ""
+                echo "Estado atual (ip addr + rota default):"
+                ${pkgs.iproute2}/bin/ip -br addr show dev "$iface"
+                ${pkgs.iproute2}/bin/ip route show default
+                echo "(Isso vale so nesta sessao do ISO; depois do reboot a rede e network-static.nix por MAC.)"
                 return 0
               }
 
