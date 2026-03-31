@@ -44,7 +44,7 @@
             wants = [ "network-online.target" ];
             path = with pkgs; [
               bash coreutils util-linux parted dosfstools e2fsprogs
-              iproute2 iputils
+              iproute2 iputils bind.dnsutils
               nix nixos-install-tools git
             ];
             serviceConfig = {
@@ -80,27 +80,54 @@
                 printf -v "$__var_name" '%s' "$__value"
               }
 
-              detect_install_iface() {
-                local iface path
-                for path in /sys/class/net/*; do
-                  iface="''${path##*/}"
-                  case "$iface" in
-                    lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
-                  esac
-                  if [ -e "$path/device" ]; then
-                    printf '%s\n' "$iface"
-                    return 0
-                  fi
-                done
+              choose_install_iface() {
+                local path iface i choice list_file
+                list_file=$(${pkgs.coreutils}/bin/mktemp)
                 for path in /sys/class/net/*; do
                   iface="''${path##*/}"
                   case "$iface" in
                     lo|docker*|virbr*|veth*|br-*|tun*|tap*|wg*) continue ;;
                   esac
                   printf '%s\n' "$iface"
+                done | ${pkgs.coreutils}/bin/sort -u > "$list_file"
+                if [ ! -s "$list_file" ]; then
+                  ${pkgs.coreutils}/bin/rm -f "$list_file"
+                  echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
+                  return 1
+                fi
+                echo "Interfaces de rede (escolha antes de informar o IP):"
+                i=1
+                while IFS= read -r iface; do
+                  [ -z "$iface" ] && continue
+                  mac=$(${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${iface}/address" 2>/dev/null || echo "?")
+                  echo "  ''${i}) ''${iface}  (MAC: ''${mac})"
+                  i=$((i+1))
+                done < "$list_file"
+                while true; do
+                  prompt_read choice "Numero da lista ou nome da interface (ex: enp0s3): "
+                  choice="''${choice//[[:space:]]/}"
+                  [ -z "$choice" ] && { echo "Informe um numero ou nome."; continue; }
+                  case "$choice" in
+                    *[!0-9]*)
+                      iface="$choice"
+                      if [ ! -e "/sys/class/net/''${iface}" ]; then
+                        echo "Interface ''${iface} nao existe. Use ip link para ver os nomes."
+                        continue
+                      fi
+                      ;;
+                    *)
+                      iface=$(${pkgs.coreutils}/bin/sed -n "''${choice}p" "$list_file")
+                      if [ -z "$iface" ] || [ ! -e "/sys/class/net/''${iface}" ]; then
+                        echo "Numero invalido."
+                        continue
+                      fi
+                      ;;
+                  esac
+                  INSTALL_IFACE="$iface"
+                  ${pkgs.coreutils}/bin/rm -f "$list_file"
+                  echo "Interface selecionada: ''${INSTALL_IFACE}"
                   return 0
                 done
-                return 1
               }
 
               octet_ok() {
@@ -125,13 +152,10 @@
                 validate_ipv4 "$ip"
               }
 
-              INSTALL_IFACE="$(detect_install_iface || true)"
-              [ -n "$INSTALL_IFACE" ] || {
-                echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
-                exit 1
-              }
+              INSTALL_IFACE=""
+              choose_install_iface || exit 1
 
-              apply_static_iface_and_ping() {
+              apply_static_iface_and_dns() {
                 local iface="$INSTALL_IFACE"
                 if [ ! -e "/sys/class/net/''${iface}" ]; then
                   echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
@@ -146,19 +170,11 @@
                 # Rede estatica nao preenche resolv.conf; sem isso o Nix nao resolve cache.nixos.org
                 ${pkgs.coreutils}/bin/rm -f /etc/resolv.conf
                 ${pkgs.coreutils}/bin/printf '%s\n' 'nameserver 1.1.1.1' 'nameserver 8.8.8.8' 'nameserver 208.67.222.222' 'nameserver 208.67.220.220' > /etc/resolv.conf
-                if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 8.8.8.8 >/dev/null 2>&1; then
-                  echo "Falha: sem resposta ao ping 8.8.8.8."
+                if ! ${pkgs.bind.dnsutils}/bin/host cache.nixos.org >/dev/null 2>&1; then
+                  echo "Falha: nao foi possivel resolver cache.nixos.org (DNS / resolv.conf)."
                   return 1
                 fi
-                if ! ${pkgs.iputils}/bin/ping -c 2 -W 4 1.1.1.1 >/dev/null 2>&1; then
-                  echo "Falha: sem resposta ao ping 1.1.1.1."
-                  return 1
-                fi
-                if ! ${pkgs.iputils}/bin/ping -c 2 -W 6 cache.nixos.org >/dev/null 2>&1; then
-                  echo "Falha: DNS ou acesso a cache.nixos.org (verifique resolv.conf / firewall)."
-                  return 1
-                fi
-                echo "Conectividade OK (8.8.8.8, 1.1.1.1 e cache.nixos.org)."
+                echo "DNS OK (cache.nixos.org resolve)."
                 return 0
               }
 
@@ -196,8 +212,8 @@
                 ans="''${ans//[[:space:]]/}"
                 case "''${ans,,}" in
                   s|sim|y|yes)
-                    echo "Testando conectividade (ping 8.8.8.8 e 1.1.1.1)..."
-                    if apply_static_iface_and_ping; then
+                    echo "Testando DNS (resolve cache.nixos.org)..."
+                    if apply_static_iface_and_dns; then
                       break
                     fi
                     echo "Ajuste IP/gateway ou a rede e confirme de novo."
@@ -284,8 +300,8 @@
                 --override-input nixpkgs path:${nixpkgs}
 
               echo "[8/9] instalando NixOS"
-              if ! ${pkgs.iputils}/bin/ping -c 2 -W 6 cache.nixos.org >/dev/null 2>&1; then
-                echo "ERRO: cache.nixos.org nao resolve ou nao responde antes do nixos-install (DNS/rede)." >&2
+              if ! ${pkgs.bind.dnsutils}/bin/host cache.nixos.org >/dev/null 2>&1; then
+                echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede)." >&2
                 exit 1
               fi
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
