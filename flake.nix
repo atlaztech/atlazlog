@@ -167,35 +167,28 @@
                 return 1
               }
 
-              apply_static_iface_and_dns() {
-                local iface="$INSTALL_IFACE"
-                if [ ! -e "/sys/class/net/''${iface}" ]; then
-                  echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
-                  return 1
-                fi
-                ${pkgs.systemd}/bin/systemctl stop "dhcpcd@''${iface}.service" 2>/dev/null || true
+              enforce_static_ipv4() {
+                local d iface="$1" want="''${NET_IP}/''${NET_PREFIX}"
+                for d in $(${pkgs.iproute2}/bin/ip -4 addr show dev "$iface" | ${pkgs.gawk}/bin/awk '/inet / { print $2 }'); do
+                  [ "$d" = "$want" ] && continue
+                  ${pkgs.iproute2}/bin/ip addr del "$d" dev "$iface" 2>/dev/null || true
+                done
+                while ${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'proto dhcp'; do
+                  ${pkgs.iproute2}/bin/ip route del default proto dhcp 2>/dev/null || break
+                done
+                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
+              }
+
+              stop_dhcp_stack() {
+                ${pkgs.systemd}/bin/systemctl stop "dhcpcd@''${INSTALL_IFACE}.service" 2>/dev/null || true
                 ${pkgs.systemd}/bin/systemctl stop dhcpcd.service 2>/dev/null || true
                 ${pkgs.systemd}/bin/systemctl stop systemd-networkd.service 2>/dev/null || true
-                ${pkgs.systemd}/bin/systemctl mask --runtime "dhcpcd@''${iface}.service" dhcpcd.service systemd-networkd.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl mask --runtime "dhcpcd@''${INSTALL_IFACE}.service" dhcpcd.service systemd-networkd.service 2>/dev/null || true
                 ${pkgs.procps}/bin/pkill -f 'dhcpcd|dhclient|udhcpc' 2>/dev/null || true
-                enforce_static_ipv4() {
-                  local d iface="$1" want="''${NET_IP}/''${NET_PREFIX}"
-                  for d in $(${pkgs.iproute2}/bin/ip -4 addr show dev "$iface" | ${pkgs.gawk}/bin/awk '/inet / { print $2 }'); do
-                    [ "$d" = "$want" ] && continue
-                    ${pkgs.iproute2}/bin/ip addr del "$d" dev "$iface" 2>/dev/null || true
-                  done
-                  while ${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'proto dhcp'; do
-                    ${pkgs.iproute2}/bin/ip route del default proto dhcp 2>/dev/null || break
-                  done
-                  ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
-                }
-                ${pkgs.iproute2}/bin/ip link set "$iface" up
-                ${pkgs.iproute2}/bin/ip route flush default 2>/dev/null || true
-                ${pkgs.iproute2}/bin/ip addr flush dev "$iface"
-                ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
-                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
-                enforce_static_ipv4 "$iface"
-                ${pkgs.coreutils}/bin/sleep 1
+              }
+
+              restore_resolv_and_nss() {
+                local iface="$INSTALL_IFACE"
                 # systemd-resolved (stub 127.0.0.53) sem upstream na iface estatica quebra host via resolv.conf
                 ${pkgs.systemd}/bin/resolvectl dns "$iface" 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220 2>/dev/null || true
                 ${pkgs.systemd}/bin/resolvectl flush-caches 2>/dev/null || true
@@ -212,6 +205,23 @@
                   ${pkgs.gawk}/bin/awk '/^hosts:/ { print "hosts: files dns"; next } { print }' /etc/nsswitch.conf > "$NSS_TMP"
                   ${pkgs.util-linux}/bin/mount --bind "$NSS_TMP" /etc/nsswitch.conf 2>/dev/null || ${pkgs.coreutils}/bin/cp -f "$NSS_TMP" /etc/nsswitch.conf 2>/dev/null || true
                 fi
+              }
+
+              apply_static_iface_and_dns() {
+                local iface="$INSTALL_IFACE"
+                if [ ! -e "/sys/class/net/''${iface}" ]; then
+                  echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
+                  return 1
+                fi
+                stop_dhcp_stack
+                ${pkgs.iproute2}/bin/ip link set "$iface" up
+                ${pkgs.iproute2}/bin/ip route flush default 2>/dev/null || true
+                ${pkgs.iproute2}/bin/ip addr flush dev "$iface"
+                ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
+                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
+                enforce_static_ipv4 "$iface"
+                ${pkgs.coreutils}/bin/sleep 1
+                restore_resolv_and_nss
                 local attempt dns_ok=0
                 for attempt in $(seq 1 5); do
                   enforce_static_ipv4 "$iface"
@@ -356,8 +366,20 @@
                 --override-input nixpkgs path:${nixpkgs}
 
               echo "[8/9] instalando NixOS"
-              if ! cache_nixos_resolves; then
-                echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede)." >&2
+              stop_dhcp_stack
+              enforce_static_ipv4 "$INSTALL_IFACE"
+              restore_resolv_and_nss
+              dns_ok_preinstall=0
+              for _ in $(seq 1 5); do
+                enforce_static_ipv4 "$INSTALL_IFACE"
+                if cache_nixos_resolves; then
+                  dns_ok_preinstall=1
+                  break
+                fi
+                ${pkgs.coreutils}/bin/sleep 2
+              done
+              if [ "$dns_ok_preinstall" -ne 1 ]; then
+                echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede; rede pode ter sido alterada apos particionar)." >&2
                 exit 1
               fi
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
