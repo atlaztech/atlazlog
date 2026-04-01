@@ -22,6 +22,7 @@
           nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
           boot.supportedFilesystems.zfs = lib.mkForce false;
+          boot.kernelParams = [ "systemd.ssh_auto=no" ];
           hardware.enableRedistributableFirmware = lib.mkForce false;
           hardware.firmware = lib.mkForce [];
 
@@ -33,18 +34,24 @@
           fonts.fontconfig.enable = lib.mkForce false;
           isoImage.squashfsCompression = null;
           networking.wireless.enable = lib.mkForce false;
+          networking.useDHCP = lib.mkForce false;
+          networking.dhcpcd.enable = lib.mkForce false;
+          systemd.network.enable = lib.mkForce false;
+          networking.networkmanager.enable = lib.mkForce false;
           services.udisks2.enable = lib.mkForce false;
           services.getty.autologinUser = lib.mkForce null;
           systemd.services."autovt@tty1".enable = lib.mkForce false;
           systemd.services."getty@tty1".enable = lib.mkForce false;
 
+          systemd.settings.Manager.ShowStatus = false;
+
           systemd.services.autoinstall = {
             wantedBy = [ "multi-user.target" ];
-            after = [ "local-fs.target" "network-online.target" ];
-            wants = [ "network-online.target" ];
+            after = [ "local-fs.target" ];
             path = with pkgs; [
               bash coreutils util-linux procps parted dosfstools e2fsprogs
-              iproute2 iputils bind.dnsutils
+              iproute2 iputils bind.dnsutils gnugrep gawk systemd
+              dialog kbd
               nix nixos-install-tools git
             ];
             serviceConfig = {
@@ -52,16 +59,29 @@
               TimeoutStartSec = "0";
               StandardInput = "tty-force";
               StandardOutput = "tty";
-              StandardError = "journal+console";
-              TTYPath = "/dev/tty1";
+              StandardError = "journal";
+              TTYPath = "/dev/tty12";
               TTYReset = true;
               TTYVHangup = true;
+              ExecStartPre = [ "${pkgs.kbd}/bin/chvt 12" ];
             };
             script = ''
               set -euo pipefail
 
               [ -e /tmp/done ] && exit 0
               ${pkgs.coreutils}/bin/touch /tmp/done
+
+              ${pkgs.coreutils}/bin/tput clear 2>/dev/null || ${pkgs.coreutils}/bin/true
+              ${pkgs.coreutils}/bin/printf '\n%s\n\n' "Instalador no terminal 12 (Alt+F12). Sem mensagens do systemd nesta tela."
+
+              cache_nixos_resolves() {
+                local first_ip ns
+                for ns in 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220; do
+                  first_ip=$(${pkgs.bind.dnsutils}/bin/dig +short A cache.nixos.org @"$ns" +time=1 +tries=1 2>/dev/null | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
+                  [ -n "$first_ip" ] && return 0
+                done
+                return 1
+              }
 
               prompt_read() {
                 local __var_name="$1"
@@ -81,7 +101,7 @@
               }
 
               choose_install_iface() {
-                local path iface i choice list_file
+                local path iface list_file args=() choice
                 list_file=$(${pkgs.coreutils}/bin/mktemp)
                 for path in /sys/class/net/*; do
                   iface="''${path##*/}"
@@ -95,41 +115,21 @@
                   echo "ERRO: nenhuma interface de rede utilizavel foi encontrada." >&2
                   return 1
                 fi
-                ${pkgs.coreutils}/bin/printf '\033[0;36m%s\n' "Interfaces de rede (escolha antes de informar o IP):"
-                i=1
                 while IFS= read -r iface; do
                   [ -z "$iface" ] && continue
                   mac=$(${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${iface}/address" 2>/dev/null || echo "?")
-                  ${pkgs.coreutils}/bin/printf '  %s) %s  (MAC: %s)\n' "''${i}" "''${iface}" "''${mac}"
-                  i=$((i+1))
+                  args+=("$iface" "$iface - $mac")
                 done < "$list_file"
-                ${pkgs.coreutils}/bin/printf '\033[0m\n'
+                ${pkgs.coreutils}/bin/rm -f "$list_file"
                 while true; do
-                  prompt_read choice "Numero da lista (1, 2, ...): "
-                  choice="''${choice//[[:space:]]/}"
-                  [ -z "$choice" ] && { echo "Informe o numero da lista."; continue; }
-                  case "$choice" in
-                    *[!0-9]*)
-                      echo "Apenas o numero da lista (nao use o nome da interface)."
-                      continue
-                      ;;
-                  esac
-                  iface=""
-                  i=0
-                  while IFS= read -r line; do
-                    i=$((i+1))
-                    [ "$i" -eq "$choice" ] || continue
-                    iface="$line"
-                    break
-                  done < "$list_file"
-                  if [ -z "$iface" ] || [ ! -e "/sys/class/net/''${iface}" ]; then
-                    echo "Numero invalido."
-                    continue
+                  if choice=$(TERM=linux ${pkgs.dialog}/bin/dialog --stdout --clear \
+                    --menu "Interface de instalacao (WAN)" 20 72 10 "''${args[@]}" 2>/dev/tty) </dev/tty >/dev/tty; then
+                    [ -n "$choice" ] && [ -e "/sys/class/net/''${choice}" ] || continue
+                    INSTALL_IFACE="$choice"
+                    echo "Interface: ''${INSTALL_IFACE}"
+                    return 0
                   fi
-                  INSTALL_IFACE="$iface"
-                  ${pkgs.coreutils}/bin/rm -f "$list_file"
-                  echo "Interface selecionada: ''${INSTALL_IFACE}"
-                  return 0
+                  echo "Selecione uma interface (Cancel nao encerra o instalador)."
                 done
               }
 
@@ -158,38 +158,8 @@
               INSTALL_IFACE=""
               choose_install_iface || exit 1
 
-              cache_nixos_resolves() {
-                local first_ip ns
-                for ns in 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220; do
-                  first_ip=$(${pkgs.bind.dnsutils}/bin/dig +short A cache.nixos.org @"$ns" +time=3 +tries=2 | ${pkgs.gnugrep}/bin/grep -E '^[0-9.]+$' | ${pkgs.coreutils}/bin/head -n1)
-                  [ -n "$first_ip" ] && return 0
-                done
-                return 1
-              }
-
-              enforce_static_ipv4() {
-                local d iface="$1" want="''${NET_IP}/''${NET_PREFIX}"
-                for d in $(${pkgs.iproute2}/bin/ip -4 addr show dev "$iface" | ${pkgs.gawk}/bin/awk '/inet / { print $2 }'); do
-                  [ "$d" = "$want" ] && continue
-                  ${pkgs.iproute2}/bin/ip addr del "$d" dev "$iface" 2>/dev/null || true
-                done
-                while ${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'proto dhcp'; do
-                  ${pkgs.iproute2}/bin/ip route del default proto dhcp 2>/dev/null || break
-                done
-                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
-              }
-
-              stop_dhcp_stack() {
-                ${pkgs.systemd}/bin/systemctl stop "dhcpcd@''${INSTALL_IFACE}.service" 2>/dev/null || true
-                ${pkgs.systemd}/bin/systemctl stop dhcpcd.service 2>/dev/null || true
-                ${pkgs.systemd}/bin/systemctl stop systemd-networkd.service 2>/dev/null || true
-                ${pkgs.systemd}/bin/systemctl mask --runtime "dhcpcd@''${INSTALL_IFACE}.service" dhcpcd.service systemd-networkd.service 2>/dev/null || true
-                ${pkgs.procps}/bin/pkill -f 'dhcpcd|dhclient|udhcpc' 2>/dev/null || true
-              }
-
               restore_resolv_and_nss() {
                 local iface="$INSTALL_IFACE"
-                # systemd-resolved (stub 127.0.0.53) sem upstream na iface estatica quebra host via resolv.conf
                 ${pkgs.systemd}/bin/resolvectl dns "$iface" 8.8.8.8 1.1.1.1 208.67.222.222 208.67.220.220 2>/dev/null || true
                 ${pkgs.systemd}/bin/resolvectl flush-caches 2>/dev/null || true
                 ${pkgs.systemd}/bin/systemctl stop systemd-resolved 2>/dev/null || true
@@ -207,10 +177,33 @@
                 fi
               }
 
+              enforce_static_ipv4() {
+                local d iface="$1" want="''${NET_IP}/''${NET_PREFIX}"
+                for d in $(${pkgs.iproute2}/bin/ip -4 addr show dev "$iface" | ${pkgs.gawk}/bin/awk '/inet / { print $2 }'); do
+                  [ "$d" = "$want" ] && continue
+                  ${pkgs.iproute2}/bin/ip addr del "$d" dev "$iface" 2>/dev/null || true
+                done
+                while ${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'proto dhcp'; do
+                  ${pkgs.iproute2}/bin/ip route del default proto dhcp 2>/dev/null || break
+                done
+                ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
+              }
+
+              stop_dhcp_stack() {
+                ${pkgs.systemd}/bin/systemctl stop NetworkManager.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl stop "dhcpcd@''${INSTALL_IFACE}.service" 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl stop dhcpcd.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl stop systemd-networkd.service 2>/dev/null || true
+                ${pkgs.systemd}/bin/systemctl mask --runtime \
+                  "dhcpcd@''${INSTALL_IFACE}.service" dhcpcd.service systemd-networkd.service NetworkManager.service \
+                  2>/dev/null || true
+                ${pkgs.procps}/bin/pkill -f 'dhcpcd|dhclient|udhcpc' 2>/dev/null || true
+              }
+
               apply_static_iface_and_dns() {
                 local iface="$INSTALL_IFACE"
                 if [ ! -e "/sys/class/net/''${iface}" ]; then
-                  echo "ERRO: interface ''${iface} nao existe (verifique o nome com ip link)."
+                  echo "ERRO: interface ''${iface} nao existe."
                   return 1
                 fi
                 stop_dhcp_stack
@@ -220,76 +213,80 @@
                 ${pkgs.iproute2}/bin/ip addr add "''${NET_IP}/''${NET_PREFIX}" dev "$iface"
                 ${pkgs.iproute2}/bin/ip route replace default via "''${NET_GW}" dev "$iface" src "''${NET_IP}" metric 10
                 enforce_static_ipv4 "$iface"
-                ${pkgs.coreutils}/bin/sleep 1
                 restore_resolv_and_nss
-                local attempt dns_ok=0
-                for attempt in $(seq 1 5); do
+                local dns_ok=0
+                for _ in $(seq 1 3); do
                   enforce_static_ipv4 "$iface"
                   if cache_nixos_resolves; then
                     dns_ok=1
                     break
                   fi
-                  ${pkgs.coreutils}/bin/sleep 2
+                  ${pkgs.coreutils}/bin/sleep 1
                 done
                 if [ "$dns_ok" -ne 1 ]; then
-                  echo "Falha: cache.nixos.org nao resolve (dig; ver rota/firewall)."
+                  echo "Falha: cache.nixos.org nao resolve."
                   return 1
                 fi
-                echo "DNS OK (cache.nixos.org via dig)."
-                echo ""
-                echo "Estado atual (ip addr + rota default):"
+                echo "DNS OK (cache.nixos.org)."
                 ${pkgs.iproute2}/bin/ip -br addr show dev "$iface"
                 ${pkgs.iproute2}/bin/ip route show default
-                echo "(Isso vale so nesta sessao do ISO; depois do reboot a rede e network-static.nix por MAC.)"
+                echo "(So nesta sessao do ISO; apos reboot a rede e network-static.nix por MAC.)"
                 return 0
               }
 
-              echo "[0/9] configuracao de rede (IPv4 estatico em ''${INSTALL_IFACE})"
+              echo "[0/9] configuracao de rede (dialog: interface, IP/CIDR, gateway)"
               NET_CIDR=""
               NET_GW=""
+              NET_IP=""
+              NET_PREFIX=""
+              if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+                echo "ERRO: terminal interativo indisponivel em /dev/tty." >&2
+                exit 1
+              fi
               while true; do
                 while true; do
-                  prompt_read NET_CIDR "Endereco IPv4 com mascara CIDR (ex: 192.168.1.10/24): "
-                  NET_CIDR="''${NET_CIDR//[[:space:]]/}"
-                  if validate_cidr "$NET_CIDR"; then
-                    break
+                  if v=$(TERM=linux ${pkgs.dialog}/bin/dialog --stdout --clear \
+                    --inputbox "IPv4 com mascara CIDR (ex: 192.168.1.10/24)" 10 55 "" 2>/dev/tty) </dev/tty >/dev/tty; then
+                    v="''${v//[[:space:]]/}"
+                    if validate_cidr "$v"; then
+                      NET_CIDR="$v"
+                      break
+                    fi
+                    ${pkgs.dialog}/bin/dialog --clear --msgbox "Formato invalido. Ex: 192.168.1.10/24" 8 50 2>/dev/tty || true
+                  else
+                    prompt_read NET_CIDR "IPv4 com mascara CIDR (ex: 192.168.1.10/24): "
+                    NET_CIDR="''${NET_CIDR//[[:space:]]/}"
+                    validate_cidr "$NET_CIDR" && break
+                    echo "Formato invalido."
                   fi
-                  echo "Formato invalido. Use algo como 192.168.1.10/24"
                 done
                 NET_IP="''${NET_CIDR%/*}"
                 NET_PREFIX="''${NET_CIDR#*/}"
                 while true; do
-                  prompt_read NET_GW "Gateway IPv4 (ex: 192.168.1.1): "
-                  NET_GW="''${NET_GW//[[:space:]]/}"
-                  if validate_ipv4 "$NET_GW"; then
-                    break
-                  fi
-                  echo "Gateway invalido."
-                done
-                echo ""
-                echo "Resumo:"
-                echo "  address = \"''${NET_IP}\";"
-                echo "  prefixLength = ''${NET_PREFIX};"
-                echo "  defaultGateway = \"''${NET_GW}\";"
-                echo "  interface = ''${INSTALL_IFACE} (sem DHCP nesta interface)"
-                echo "  MAC = $(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address")"
-                echo ""
-                prompt_read ans "Confirmar e continuar a instalacao? [s/N]: "
-                ans="''${ans//[[:space:]]/}"
-                case "''${ans,,}" in
-                  s|sim|y|yes)
-                    echo "Testando DNS (resolve cache.nixos.org)..."
-                    if apply_static_iface_and_dns; then
+                  if v=$(TERM=linux ${pkgs.dialog}/bin/dialog --stdout --clear \
+                    --inputbox "Gateway IPv4 (ex: 192.168.1.1)" 9 50 "" 2>/dev/tty) </dev/tty >/dev/tty; then
+                    v="''${v//[[:space:]]/}"
+                    if validate_ipv4 "$v"; then
+                      NET_GW="$v"
                       break
                     fi
-                    echo "Ajuste IP/gateway ou a rede e confirme de novo."
-                    echo ""
-                    ;;
-                  *)
-                    echo "Tente novamente."
-                    echo ""
-                    ;;
-                esac
+                    ${pkgs.dialog}/bin/dialog --clear --msgbox "Gateway IPv4 invalido." 7 40 2>/dev/tty || true
+                  else
+                    prompt_read NET_GW "Gateway IPv4 (ex: 192.168.1.1): "
+                    NET_GW="''${NET_GW//[[:space:]]/}"
+                    validate_ipv4 "$NET_GW" && break
+                    echo "Gateway invalido."
+                  fi
+                done
+                if TERM=linux ${pkgs.dialog}/bin/dialog --clear --yesno \
+                  "Confirmar?\n\n''${NET_IP}/''${NET_PREFIX} via ''${NET_GW}\niface ''${INSTALL_IFACE}" 12 60 2>/dev/tty </dev/tty >/dev/tty; then
+                  if apply_static_iface_and_dns; then
+                    break
+                  fi
+                  ${pkgs.dialog}/bin/dialog --clear --msgbox "Ajuste valores ou rede e confirme de novo." 8 55 2>/dev/tty || true
+                else
+                  echo "Revise os dados."
+                fi
               done
 
               echo "[1/9] detectando disco de instalacao"
@@ -370,13 +367,13 @@
               enforce_static_ipv4 "$INSTALL_IFACE"
               restore_resolv_and_nss
               dns_ok_preinstall=0
-              for _ in $(seq 1 5); do
+              for _ in $(seq 1 3); do
                 enforce_static_ipv4 "$INSTALL_IFACE"
                 if cache_nixos_resolves; then
                   dns_ok_preinstall=1
                   break
                 fi
-                ${pkgs.coreutils}/bin/sleep 2
+                ${pkgs.coreutils}/bin/sleep 1
               done
               if [ "$dns_ok_preinstall" -ne 1 ]; then
                 echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede; rede pode ter sido alterada apos particionar)." >&2
