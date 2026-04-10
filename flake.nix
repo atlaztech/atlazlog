@@ -234,7 +234,7 @@
                 return 0
               }
 
-              echo "[0/9] configuracao de rede (dialog: interface, IP/CIDR, gateway)"
+              echo "[0/10] configuracao de rede (dialog: interface, IP/CIDR, gateway)"
               NET_CIDR=""
               NET_GW=""
               NET_IP=""
@@ -289,7 +289,7 @@
                 fi
               done
 
-              echo "[1/9] detectando disco de instalacao"
+              echo "[1/10] detectando disco de instalacao"
               DISK=""
               for _ in $(seq 1 60); do
                 for d in /dev/vda /dev/sda /dev/nvme0n1; do
@@ -311,13 +311,13 @@
                 PART2="''${DISK}2"
               fi
 
-              echo "[2/9] particionando disco $DISK"
+              echo "[2/10] particionando disco $DISK"
               ${pkgs.parted}/bin/parted -s "$DISK" mklabel gpt
               ${pkgs.parted}/bin/parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
               ${pkgs.parted}/bin/parted -s "$DISK" set 1 esp on
               ${pkgs.parted}/bin/parted -s "$DISK" mkpart primary ext4 513MiB 100%
 
-              echo "[3/9] aguardando particoes"
+              echo "[3/10] aguardando particoes"
               for _ in $(seq 1 120); do
                 ${pkgs.util-linux}/bin/partprobe "$DISK" 2>/dev/null || true
                 [ -b "$PART1" ] && [ -b "$PART2" ] && break
@@ -326,20 +326,20 @@
               [ -b "$PART1" ]
               [ -b "$PART2" ]
 
-              echo "[4/9] formatando particoes"
+              echo "[4/10] formatando particoes"
               ${pkgs.dosfstools}/bin/mkfs.vfat -F32 "$PART1"
               ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F "$PART2"
 
-              echo "[5/9] montando sistema de arquivos"
+              echo "[5/10] montando sistema de arquivos"
               ${pkgs.util-linux}/bin/mount "$PART2" /mnt
               ${pkgs.coreutils}/bin/mkdir -p /mnt/boot
               ${pkgs.util-linux}/bin/mount "$PART1" /mnt/boot
 
-              echo "[6/9] gerando hardware-configuration e copiando config do host"
+              echo "[6/10] gerando hardware-configuration e copiando config do host"
               ${pkgs.nixos-install-tools}/bin/nixos-generate-config --root /mnt
               ${pkgs.coreutils}/bin/cp ${self}/nix/flake.nix /mnt/etc/nixos/flake.nix
 
-              echo "[6b/9] gravando network-static.nix (por MAC, nome da iface pode mudar apos reboot)"
+              echo "[7/10] gravando network-static.nix (por MAC, nome da iface pode mudar apos reboot)"
               NIC_MAC=$(tr '[:upper:]' '[:lower:]' < "/sys/class/net/''${INSTALL_IFACE}/address" | tr -d '[:space:]')
               [ -n "$NIC_MAC" ] || { echo "ERRO: nao foi possivel ler MAC de ''${INSTALL_IFACE}"; exit 1; }
               {
@@ -357,12 +357,39 @@
                 ${pkgs.coreutils}/bin/printf '%s\n' '}'
               } > /mnt/etc/nixos/network-static.nix
 
-              echo "[7/9] resolvendo flake.lock offline (via store paths)"
+              echo "[8/10] resolvendo flake.lock offline (via store paths)"
               ${pkgs.nix}/bin/nix flake lock /mnt/etc/nixos \
                 --override-input atlaz-os path:${self} \
                 --override-input nixpkgs path:${nixpkgs}
 
-              echo "[8/9] instalando NixOS"
+              echo "[9/10] instalando NixOS (debug verboso)"
+              debug_pre_nixos_install() {
+                echo "[debug] ===== $(date -Is) pre-nixos-install ====="
+                echo "[debug] INSTALL_IFACE=$INSTALL_IFACE NET_IP=$NET_IP NET_PREFIX=$NET_PREFIX NET_GW=$NET_GW"
+                echo "[debug] ip -br addr:"
+                ${pkgs.iproute2}/bin/ip -br addr show 2>/dev/null || true
+                echo "[debug] ip -4 route:"
+                ${pkgs.iproute2}/bin/ip -4 route show 2>/dev/null || true
+                echo "[debug] /etc/resolv.conf:"
+                ${pkgs.coreutils}/bin/cat /etc/resolv.conf 2>/dev/null || echo "(ausente)"
+                echo "[debug] dig cache.nixos.org (resolver padrao):"
+                ${pkgs.bind.dnsutils}/bin/dig +short A cache.nixos.org +time=1 +tries=1 2>/dev/null || true
+                echo "[debug] findmnt /mnt:"
+                ${pkgs.util-linux}/bin/findmnt /mnt 2>/dev/null || true
+                echo "[debug] ls -la /mnt/etc/nixos:"
+                ${pkgs.coreutils}/bin/ls -la /mnt/etc/nixos 2>/dev/null || true
+                echo "[debug] test -f /mnt/etc/nixos/flake.nix:" $(${pkgs.coreutils}/bin/test -f /mnt/etc/nixos/flake.nix && echo sim || echo nao)
+                echo "[debug] test -f /mnt/etc/nixos/network-static.nix:" $(${pkgs.coreutils}/bin/test -f /mnt/etc/nixos/network-static.nix && echo sim || echo nao)
+                echo "[debug] nix --version:" $(${pkgs.nix}/bin/nix --version 2>/dev/null || echo "?")
+                echo "[debug] nix flake metadata /mnt/etc/nixos (curto):"
+                { ${pkgs.nix}/bin/nix flake metadata /mnt/etc/nixos 2>&1 | ${pkgs.coreutils}/bin/head -n 30; } || true
+                echo "[debug] env NIX_*:"
+                ${pkgs.coreutils}/bin/env | ${pkgs.gnugrep}/bin/grep -E '^NIX_' 2>/dev/null || true
+                echo "[debug] ===== fim snapshot ====="
+              }
+              debug_pre_nixos_install
+
+              set -x
               stop_dhcp_stack
               enforce_static_ipv4 "$INSTALL_IFACE"
               restore_resolv_and_nss
@@ -375,16 +402,25 @@
                 fi
                 ${pkgs.coreutils}/bin/sleep 1
               done
+              echo "[debug] dns_ok_preinstall=$dns_ok_preinstall"
               if [ "$dns_ok_preinstall" -ne 1 ]; then
+                set +x
+                debug_pre_nixos_install
                 echo "ERRO: cache.nixos.org nao resolve antes do nixos-install (DNS/rede; rede pode ter sido alterada apos particionar)." >&2
                 exit 1
               fi
+              set +e
               ${pkgs.nixos-install-tools}/bin/nixos-install --root /mnt --flake /mnt/etc/nixos#atlazlog --no-root-passwd --no-channel-copy --show-trace
+              ec_install=$?
+              set -e
+              set +x
+              echo "[debug] nixos-install exit code: $ec_install"
 
-              echo "[9/9] removendo flake.lock (proximo rebuild resolve via GitHub)"
+              echo "[10/10] removendo flake.lock (proximo rebuild resolve via GitHub)"
               ${pkgs.coreutils}/bin/rm -f /mnt/etc/nixos/flake.lock
-              echo "[final] reiniciando sistema"
-              ${pkgs.systemd}/bin/systemctl reboot
+              echo "[debug] flake.lock em /mnt removido se existia"
+              echo "Instalação finalizada, você por reiniciar a máquina agora"
+              [ "$ec_install" -eq 0 ] || exit "$ec_install"
             '';
           };
         })
