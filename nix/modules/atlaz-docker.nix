@@ -33,6 +33,7 @@ in
         environment = {
           APP_ENV = "production";
           APP_DEBUG = "false";
+          CLICKHOUSE_URL = "http://localhost:8123";
           DB_PASSWORD = masterPassword;
           REDIS_PASSWORD = masterPassword;
           CLICKHOUSE_PASSWORD = masterPassword;
