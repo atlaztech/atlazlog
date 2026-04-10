@@ -29,9 +29,12 @@
           Type = "oneshot";
           WorkingDirectory = "/etc/nixos";
           ExecStart = pkgs.writeShellScript "atlaz-autoupdate" ''
+            ${pkgs.systemd}/bin/systemctl reset-failed nixos-rebuild-switch-to-configuration.service 2>/dev/null || true
             ${pkgs.nix}/bin/nix flake update --flake /etc/nixos
             ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#atlazlog
           '';
+          RestartSec = "60s";
+          Restart = "on-failure";
         };
       };
     };
@@ -55,7 +58,7 @@
     timers.atlaz-autoupdate = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnBootSec = "0s";
+        OnBootSec = "30s";
         OnCalendar = "*-*-* 06:00:00";
         Persistent = true;
         RandomizedDelaySec = "10min";
