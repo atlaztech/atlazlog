@@ -21,6 +21,16 @@
         wants = [ "network-online.target" ];
       };
 
+      atlaz-docker-prune = {
+        description = "Remove unused Docker images";
+        after = [ "docker.service" ];
+        wants = [ "docker.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${pkgs.docker}/bin/docker image prune -af";
+        };
+      };
+
       atlaz-autoupdate = {
         description = "AtlazLog auto-update";
         after = [ "network-online.target" ];
@@ -55,13 +65,21 @@
       };
     };
 
+    timers.atlaz-docker-prune = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "*-*-* 09:00:00";
+        Persistent = true;
+      };
+    };
+
     timers.atlaz-autoupdate = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "30s";
         OnCalendar = "*-*-* 06:00:00";
         Persistent = true;
-        RandomizedDelaySec = "10min";
+        RandomizedDelaySec = "30min";
       };
     };
   };
