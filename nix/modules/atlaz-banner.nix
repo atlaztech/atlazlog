@@ -21,29 +21,31 @@
           mkdir -p "$issue_dir"
 
           mem_total_kb="$(${pkgs.gnugrep}/bin/grep '^MemTotal:' /proc/meminfo | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/cut -d' ' -f2)"
-          mem_avail_kb="$(${pkgs.gnugrep}/bin/grep '^MemAvailable:' /proc/meminfo | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/cut -d' ' -f2)"
+
           cpu_count="$(${pkgs.coreutils}/bin/nproc)"
           kernel="$(${pkgs.coreutils}/bin/cat /proc/sys/kernel/osrelease)"
           hostname="$(${pkgs.coreutils}/bin/cat /proc/sys/kernel/hostname)"
           ip_addr="$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' || echo 'N/A')"
+          gateway="$(${pkgs.iproute2}/bin/ip -4 route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oP 'via \K\S+' || echo 'N/A')"
 
           mem_total_gib="$(${pkgs.gawk}/bin/awk "BEGIN { printf \"%.1f\", ${"$"}mem_total_kb / 1024 / 1024 }")"
-          mem_avail_gib="$(${pkgs.gawk}/bin/awk "BEGIN { printf \"%.1f\", ${"$"}mem_avail_kb / 1024 / 1024 }")"
 
-          GREEN='\033[32m'
-          RESET='\033[0m'
+
+          GREEN=$'\033[32m'
+          RESET=$'\033[0m'
 
           cat > "$issue_file" <<EOF
-          AtlazOS
-          Hostname: $hostname
-          RAM total: $mem_total_gib GiB
-          RAM disponivel: $mem_avail_gib GiB
-          vCPUs: $cpu_count
-          Kernel: $kernel
+AtlazOS
+Hostname: $hostname
+RAM total: $mem_total_gib GiB
+IP: $ip_addr
+Gateway: $gateway
+vCPUs: $cpu_count
+Kernel: $kernel
 
-          Acesse no navegador: ''${GREEN}http://$ip_addr:8000''${RESET}
+Acesse no navegador: ''${GREEN}http://$ip_addr:8000''${RESET}
 
-          EOF
+EOF
         '';
       };
     };
