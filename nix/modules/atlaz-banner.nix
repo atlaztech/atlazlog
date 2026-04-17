@@ -1,7 +1,7 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
-  services.getty.greetingLine = "";
-  services.getty.helpLine = "";
+  services.getty.greetingLine = lib.mkForce "";
+  services.getty.helpLine = lib.mkForce "";
 
   systemd.services = {
     atlaz-login-banner = {
