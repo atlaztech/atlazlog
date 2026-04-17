@@ -20,28 +20,23 @@
 
           mkdir -p "$issue_dir"
 
-          mem_total_kb="$(${pkgs.gnugrep}/bin/grep '^MemTotal:' /proc/meminfo | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/cut -d' ' -f2)"
-
           cpu_count="$(${pkgs.coreutils}/bin/nproc)"
-          kernel="$(${pkgs.coreutils}/bin/cat /proc/sys/kernel/osrelease)"
-          hostname="$(${pkgs.coreutils}/bin/cat /proc/sys/kernel/hostname)"
+          cpu_model="$(${pkgs.gnugrep}/bin/grep -m1 'model name' /proc/cpuinfo | ${pkgs.coreutils}/bin/cut -d: -f2 | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/cut -c2-)"
+          cpu_freq="$(${pkgs.gawk}/bin/awk '/^cpu MHz/ { printf "%.2f GHz", $4/1000; exit }' /proc/cpuinfo)"
+          mem_total_kb="$(${pkgs.gnugrep}/bin/grep '^MemTotal:' /proc/meminfo | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/cut -d' ' -f2)"
+          mem_total_gib="$(${pkgs.gawk}/bin/awk "BEGIN { printf \"%.1f\", ${"$"}mem_total_kb / 1024 / 1024 }")"
           ip_addr="$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' || echo 'N/A')"
           gateway="$(${pkgs.iproute2}/bin/ip -4 route show default 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oP 'via \K\S+' || echo 'N/A')"
-
-          mem_total_gib="$(${pkgs.gawk}/bin/awk "BEGIN { printf \"%.1f\", ${"$"}mem_total_kb / 1024 / 1024 }")"
-
 
           GREEN=$'\033[32m'
           RESET=$'\033[0m'
 
           cat > "$issue_file" <<EOF
 AtlazOS
-Hostname: $hostname
-RAM total: $mem_total_gib GiB
+CPU: $cpu_model ($cpu_count vCPUs @ $cpu_freq)
+RAM: $mem_total_gib GiB
 IP: $ip_addr
 Gateway: $gateway
-vCPUs: $cpu_count
-Kernel: $kernel
 
 Acesse no navegador: ''${GREEN}http://$ip_addr:8000''${RESET}
 
