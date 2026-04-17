@@ -1,5 +1,8 @@
 { pkgs, ... }:
 {
+  services.getty.greetingLine = "";
+  services.getty.helpLine = "";
+
   systemd.services = {
     atlaz-login-banner = {
       description = "Generate Atlaz pre-login banner";
